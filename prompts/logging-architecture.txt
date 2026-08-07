@@ -1,0 +1,220 @@
+Review and improve the logging architecture of the Manage-R backend.
+
+Context:
+- Framework: NestJS
+- Logger: nestjs-pino (pino-http)
+- Global exception filter already exists.
+- Logger middleware already exists.
+- Swagger is enabled.
+- Prisma is used.
+- The project follows a clean, modular architecture and production-quality coding standards.
+
+Goal:
+Redesign the logging system to resemble a modern enterprise backend while keeping the existing architecture intact.
+
+Requirements
+
+========================
+1. Startup Logs
+========================
+
+Replace the verbose NestJS startup output with a concise startup summary.
+
+Example:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚀 Manage-R API Started
+
+Environment : development
+Port        : 3000
+API         : http://localhost:3000/api/v1
+Swagger     : http://localhost:3000/api/docs
+Database    : Connected
+Node        : v22.x
+PID         : xxxx
+Started At  : 2026-08-07T12:00:00Z
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Avoid printing every controller registration unless DEBUG logging is enabled.
+
+========================
+2. HTTP Request Logs
+========================
+
+Reduce request logs to a concise single-line format.
+
+Example:
+
+GET    /api/v1                         200   12ms
+POST   /api/v1/auth/login              401   48ms
+PUT    /api/v1/profile                 200   37ms
+
+Do NOT print:
+
+- full request headers
+- cookies
+- authorization headers
+- entire request body
+- entire response body
+
+Only log:
+
+- request id
+- method
+- path
+- status code
+- response time
+- IP
+- authenticated user id (if available)
+
+========================
+3. Request IDs
+========================
+
+Automatically generate a unique request ID for every request.
+
+The request ID must appear in:
+
+- request logs
+- exception logs
+- Prisma logs
+
+Example:
+
+[ab12cd34] GET /api/v1/profile 200 18ms
+
+========================
+4. Ignore Noisy Routes
+========================
+
+Do not log these requests unless they fail:
+
+/favicon.ico
+/robots.txt
+/apple-touch-icon.png
+
+========================
+5. Error Logging
+========================
+
+Log exceptions in a structured format.
+
+Example:
+
+Request ID
+Method
+URL
+Status Code
+Exception Name
+Message
+Stack Trace (development only)
+
+Never expose stack traces to API clients.
+
+========================
+6. Development vs Production
+========================
+
+Development:
+
+- pretty logs
+- colors
+- readable formatting
+- stack traces
+
+Production:
+
+- JSON logs
+- structured logging
+- no colors
+- optimized for log aggregation
+
+Automatically switch based on NODE_ENV.
+
+========================
+7. Security
+========================
+
+Redact sensitive values.
+
+Never log:
+
+Authorization
+Cookie
+Password
+Refresh Token
+JWT
+Access Token
+
+========================
+8. Prisma Logging
+========================
+
+Integrate Prisma logging with the application's logger.
+
+Log:
+
+Database connected
+Slow queries (>500ms)
+Query errors
+
+Do not log every SQL query.
+
+========================
+9. Logger Middleware
+========================
+
+Review the current LoggerMiddleware.
+
+If pino already provides the same functionality, remove duplicate logging.
+
+Avoid double-logging every request.
+
+========================
+10. Log Levels
+========================
+
+Use consistent levels.
+
+INFO
+Application lifecycle
+Successful requests
+
+WARN
+404s
+Validation failures
+Slow requests
+
+ERROR
+Unhandled exceptions
+Database failures
+
+DEBUG
+Verbose diagnostic information (development only)
+
+========================
+11. Code Quality
+========================
+
+Refactor duplicated logging code.
+
+Create reusable utilities if necessary.
+
+Follow SOLID principles.
+
+Do not introduce unnecessary dependencies.
+
+Keep controllers and services free from logging unless business events genuinely require it.
+
+========================
+12. Final Review
+========================
+
+After implementation, explain:
+
+- what files were changed
+- why each change was made
+- whether any previous logging became redundant
+- any additional recommendations following NestJS and Pino best practices
+
+The final logging system should look similar to what would be expected in a production backend at a modern software company.

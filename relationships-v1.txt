@@ -1,0 +1,40 @@
+sec_role
+   │
+   └──────────────┐
+                  │
+                  ▼
+              sec_user
+                  │ 1:1
+                  ▼
+               profile
+                  │
+      ┌───────────┼───────────────┐
+      │           │               │
+      ▼           ▼               ▼
+education    experience      project
+                  │               │
+                  ▼               ▼
+             exp_bullet     project_bullet
+
+      │
+      ▼
+profile_skill
+
+      │
+      ▼
+certification
+
+      │
+      ▼
+resume
+      │
+      ├──── resume_section
+      ├──── resume_skill
+      ├──── resume_project
+      ├──── resume_experience
+      ├──── resume_education
+      └──── resume_certification
+
+      │
+      ▼
+job_application

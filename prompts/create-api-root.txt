@@ -1,0 +1,81 @@
+Create a production-ready API Root endpoint for the Manage-R backend.
+
+Project context:
+- Framework: NestJS
+- API prefix: /api
+- URI versioning: v1
+- Current architecture follows modular design.
+- Global response interceptor, exception filter, logger middleware, Swagger, and Prisma are already configured.
+- Follow the existing coding style and project conventions. Do not introduce a different architecture.
+
+Requirements:
+
+1. Create a dedicated Root module instead of placing the endpoint inside AppModule.
+   Structure should resemble:
+
+src/modules/root/
+    root.module.ts
+    root.controller.ts
+    root.service.ts
+
+2. Expose:
+
+GET /api/v1
+
+3. Return HTTP 200.
+
+4. Response must pass through the existing global response interceptor instead of manually wrapping responses.
+
+5. The service should return only domain data. Let the interceptor produce the standard API response format.
+
+6. Include the following information:
+
+- applicationName
+- description
+- version
+- environment
+- current server timestamp (ISO8601)
+- documentation URL
+- API status ("healthy")
+- uptime (seconds)
+- nodeVersion
+- apiVersion
+
+Example payload BEFORE interceptor:
+
+{
+  applicationName: "Manage-R API",
+  description: "...",
+  version: "1.0.0",
+  apiVersion: "v1",
+  environment: process.env.NODE_ENV,
+  status: "healthy",
+  uptime: process.uptime(),
+  timestamp: new Date().toISOString(),
+  nodeVersion: process.version,
+  documentation: "/api/docs"
+}
+
+7. Use ConfigService where appropriate instead of hardcoded values whenever configuration already exists.
+
+8. Add proper Swagger decorators:
+- ApiTags
+- ApiOperation
+- ApiOkResponse
+
+9. Keep controller extremely thin.
+Business logic belongs in RootService.
+
+10. Follow NestJS dependency injection best practices.
+
+11. Do not duplicate constants already available in the project.
+
+12. Register the module inside AppModule.
+
+13. Ensure GET /api/v1 appears in Swagger.
+
+14. Do not modify existing interceptors, filters, middleware, authentication, or logging unless absolutely required.
+
+15. If any improvement is discovered that aligns with the current architecture, implement it and explain why at the end.
+
+Produce clean, production-quality code that is easy to extend in future versions (v2, health endpoints, build info, metrics, etc.).

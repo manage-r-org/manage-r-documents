@@ -1,0 +1,328 @@
+# Manage-R Backend Foundation
+
+You are a senior Backend Architect and Staff Software Engineer.
+
+Your task is to initialize the backend codebase for a production-quality SaaS application called **Manage-R**, a resume management and career tracking platform.
+
+Do **NOT** implement business features yet.
+
+Your goal is to build a clean, scalable, maintainable and enterprise-grade NestJS foundation.
+
+---
+
+# Technology Stack
+
+* NestJS (latest stable)
+* TypeScript
+* PostgreSQL
+* Prisma ORM
+* JWT Authentication
+* Passport
+* class-validator
+* class-transformer
+* Swagger/OpenAPI
+* Helmet
+* Compression
+* CORS
+* bcrypt
+* Pino Logger (nestjs-pino)
+* ConfigModule
+* Joi Environment Validation
+
+---
+
+# Project Principles
+
+The project must follow:
+
+* SOLID Principles
+* Clean Architecture (lightweight)
+* Feature-based modular architecture
+* Repository Pattern
+* Dependency Injection
+* DTO Mapping
+* Global Exception Handling
+* Global Validation
+* Consistent API Responses
+* Enterprise naming conventions
+
+Avoid unnecessary complexity such as CQRS, Event Sourcing, Kafka, RabbitMQ, Redis or Microservices.
+
+This project will remain a modular monolith.
+
+---
+
+# Folder Structure
+
+Create a scalable folder structure similar to:
+
+src/
+
+common/
+
+* constants/
+* decorators/
+* dto/
+* entities/
+* enums/
+* exceptions/
+* filters/
+* guards/
+* interceptors/
+* interfaces/
+* middleware/
+* pipes/
+* utils/
+* validators/
+
+config/
+
+database/
+
+* prisma/
+* repositories/
+
+modules/
+
+* auth/
+* users/
+* profiles/
+* roles/
+* resume/
+* education/
+* experience/
+* project/
+* certification/
+* job-application/
+* health/
+
+main.ts
+
+app.module.ts
+
+Every module should contain
+
+* controller
+* service
+* repository
+* dto
+* mapper
+* module
+
+---
+
+# Environment Configuration
+
+Use ConfigModule globally.
+
+Validate all environment variables using Joi.
+
+No service should access process.env directly.
+
+Use ConfigService everywhere.
+
+Create an .env.example file.
+
+---
+
+# Logging
+
+Use nestjs-pino.
+
+Configure structured JSON logging.
+
+No console.log() anywhere.
+
+---
+
+# Validation
+
+Configure a global ValidationPipe.
+
+Use:
+
+* whitelist=true
+* forbidNonWhitelisted=true
+* transform=true
+
+---
+
+# Exception Handling
+
+Create a global exception filter.
+
+Every error response should follow:
+
+{
+"success": false,
+"statusCode": 400,
+"message": "...",
+"timestamp": "...",
+"path": "..."
+}
+
+---
+
+# Success Response
+
+Create a global response interceptor.
+
+Every successful response should follow:
+
+{
+"success": true,
+"message": "...",
+"data": {}
+}
+
+---
+
+# Authentication
+
+Do not implement authentication yet.
+
+Prepare the architecture for:
+
+* JWT
+* Refresh Token
+* Passport
+* Role Guard
+
+Create empty modules if necessary.
+
+---
+
+# Prisma
+
+Configure Prisma.
+
+Create PrismaModule.
+
+Create PrismaService singleton.
+
+Repository classes must use PrismaService instead of directly instantiating Prisma Client.
+
+Do not create schema.prisma models yet.
+
+---
+
+# Swagger
+
+Configure Swagger.
+
+Expose documentation under:
+
+/api/docs
+
+---
+
+# API Versioning
+
+Enable URI Versioning.
+
+Example:
+
+/api/v1/users
+
+---
+
+# Security
+
+Configure:
+
+Helmet
+
+Compression
+
+CORS
+
+Secure HTTP headers
+
+Graceful shutdown hooks
+
+---
+
+# Health Module
+
+Create a Health module.
+
+Endpoint:
+
+GET /api/v1/health
+
+Returns
+
+{
+"success": true,
+"message": "Application is healthy",
+"data": {
+"status":"UP"
+}
+}
+
+---
+
+# Code Quality
+
+Configure:
+
+ESLint
+
+Prettier
+
+Husky
+
+lint-staged
+
+Conventional Commits (commitlint)
+
+EditorConfig
+
+GitIgnore
+
+DockerIgnore
+
+---
+
+# Docker
+
+Generate:
+
+Dockerfile
+
+docker-compose.yml (development only)
+
+---
+
+# Testing
+
+Configure Jest.
+
+No tests are required yet.
+
+---
+
+# README
+
+Generate a professional README including:
+
+* Tech Stack
+* Folder Structure
+* Installation
+* Environment Variables
+* Development Commands
+* Docker Commands
+
+---
+
+# Output Requirements
+
+Generate a production-ready project scaffold.
+
+Do not generate placeholder CRUD endpoints.
+
+Do not implement business logic.
+
+Focus entirely on architecture, configuration, project structure and maintainability.
+
+The generated project should be a strong foundation that future developers can confidently build upon.

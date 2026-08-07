@@ -1,0 +1,100 @@
+
+
+# Planned tables 
+
+master_skill{
+  skill_id (PK)
+  skill_name
+  description
+  created_by
+  created_at
+  updated_by
+  updated_at
+}
+
+master_resume_category{
+    resume_category_id (PK)
+    resume_category_name
+    description
+    created_by
+    created_at
+    updated_by
+    updated_at
+}
+
+master_resume_template{
+    resume_template_id (PK)
+    resume_template_name
+    ...
+    pagesize...hight...width...margin...padding..tables..everything..to.handle..the..layout 
+    ...
+    description
+    created_by
+    created_at
+    updated_by
+    updated_at
+}
+
+sec_role{
+  role_id (PK)
+  role_name (enum: admin, user)
+  description
+  menujson
+  created_by
+  created_at
+  updated_by
+  updated_at
+}
+
+
+sec_user{
+  user_id (PK)
+  username
+  email
+  phone_number
+  password_hash
+  role (enum: admin, user)
+  created_at
+  updated_at
+}
+
+userprofile{
+    profile_id (PK)
+    firstname
+    middlename
+    lastname
+    dob
+    present_address
+    permanent_address
+}
+
+education{
+    education_id (PK)
+    userprofile_id (FK)
+    degree 
+    institution
+    status
+    start_date
+    end_date
+    grade
+    remarks
+}
+
+experience{
+    experience_id (PK)
+    userprofile_id (FK)
+    company_name
+    position
+    start_date
+    end_date
+    responsibilities[] 
+    skills_required[] 
+}
+
+resume{
+    resume_id (PK)
+    resume_type (enum: CV, resume)
+    resume_category_id (FK)
+    userprofile_id (FK)
+    ... 
+}

@@ -1,0 +1,18 @@
+
+
+-- Connect to postgres database with postgres user 
+psql -U postgres -d postgres
+
+-- Create new database user
+CREATE USER manageradmin WITH PASSWORD 'manageradmin';
+
+-- Create your database
+CREATE DATABASE manage_r_core OWNER manageradmin ENCODING='UTF8';
+
+-- Create necessary extensions 
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS dblink;
+
+-- Grant necessary privileges 
+GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO manageradmin;

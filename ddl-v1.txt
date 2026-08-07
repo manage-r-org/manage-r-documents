@@ -1,0 +1,393 @@
+--- Security 
+CREATE TABLE sec_role (
+    role_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    role_name VARCHAR(50) NOT NULL UNIQUE,
+    description TEXT,
+    menu_json JSONB,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_by BIGINT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by BIGINT,
+    updated_at TIMESTAMP
+);
+
+CREATE TABLE sec_user (
+    user_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    role_id BIGINT NOT NULL REFERENCES sec_role(role_id),
+
+    username VARCHAR(50) NOT NULL UNIQUE,
+    email VARCHAR(150) NOT NULL UNIQUE,
+    phone_number VARCHAR(20),
+
+    password_hash TEXT NOT NULL,
+
+    last_login_at TIMESTAMP,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_by BIGINT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by BIGINT,
+    updated_at TIMESTAMP
+);
+
+CREATE TABLE login_log (
+    login_log_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    user_id BIGINT NOT NULL REFERENCES sec_user(user_id),
+
+    login_time TIMESTAMP NOT NULL,
+    logout_time TIMESTAMP,
+
+    ip_address VARCHAR(50),
+    browser VARCHAR(100),
+    operating_system VARCHAR(100),
+    device_info VARCHAR(255),
+
+    login_status VARCHAR(20),
+    failure_reason TEXT
+);
+
+
+--- Profile 
+CREATE TABLE profile (
+    profile_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    user_id BIGINT NOT NULL UNIQUE REFERENCES sec_user(user_id),
+
+    first_name VARCHAR(100),
+    middle_name VARCHAR(100),
+    last_name VARCHAR(100),
+
+    headline VARCHAR(255),
+    summary TEXT,
+
+    date_of_birth DATE,
+
+    email VARCHAR(150),
+    phone_number VARCHAR(20),
+
+    portfolio_url TEXT,
+    github_url TEXT,
+    linkedin_url TEXT,
+
+    present_address TEXT,
+    permanent_address TEXT,
+
+    profile_photo_url TEXT,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_by BIGINT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by BIGINT,
+    updated_at TIMESTAMP
+);
+
+--- Skills 
+CREATE TABLE profile_skill (
+    profile_skill_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    profile_id BIGINT NOT NULL REFERENCES profile(profile_id),
+
+    skill_name VARCHAR(100) NOT NULL,
+    category VARCHAR(50),
+    proficiency SMALLINT,
+
+    display_order INTEGER DEFAULT 1,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_by BIGINT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by BIGINT,
+    updated_at TIMESTAMP
+);
+
+
+--- Education 
+CREATE TABLE profile_education (
+    education_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    profile_id BIGINT NOT NULL REFERENCES profile(profile_id),
+
+    degree VARCHAR(255),
+    institution VARCHAR(255),
+    field_of_study VARCHAR(255),
+
+    grade VARCHAR(50),
+    status VARCHAR(50),
+
+    start_date DATE,
+    end_date DATE,
+
+    remarks TEXT,
+
+    display_order INTEGER DEFAULT 1,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_by BIGINT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by BIGINT,
+    updated_at TIMESTAMP
+);
+
+
+--- Experience 
+CREATE TABLE profile_experience (
+    experience_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    profile_id BIGINT NOT NULL REFERENCES profile(profile_id),
+
+    company_name VARCHAR(255),
+    position VARCHAR(255),
+
+    employment_type VARCHAR(50),
+
+    location VARCHAR(255),
+
+    start_date DATE,
+    end_date DATE,
+
+    is_current BOOLEAN DEFAULT FALSE,
+
+    display_order INTEGER DEFAULT 1,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_by BIGINT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by BIGINT,
+    updated_at TIMESTAMP
+);
+
+CREATE TABLE profile_experience_bullet (
+    experience_bullet_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    experience_id BIGINT NOT NULL REFERENCES profile_experience(experience_id) ON DELETE CASCADE,
+
+    bullet_text TEXT NOT NULL,
+
+    display_order INTEGER DEFAULT 1
+);
+
+
+--- Projects 
+CREATE TABLE profile_project (
+    project_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    profile_id BIGINT NOT NULL REFERENCES profile(profile_id),
+
+    project_name VARCHAR(255),
+
+    description TEXT,
+
+    tech_stack TEXT,
+
+    github_url TEXT,
+    live_url TEXT,
+
+    display_order INTEGER DEFAULT 1,
+
+    is_featured BOOLEAN DEFAULT FALSE,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_by BIGINT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by BIGINT,
+    updated_at TIMESTAMP
+);
+
+CREATE TABLE profile_project_bullet (
+    project_bullet_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    project_id BIGINT NOT NULL REFERENCES profile_project(project_id) ON DELETE CASCADE,
+
+    bullet_text TEXT NOT NULL,
+
+    display_order INTEGER DEFAULT 1
+);
+
+
+--- Certifications 
+CREATE TABLE profile_certification (
+    certification_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    profile_id BIGINT NOT NULL REFERENCES profile(profile_id),
+
+    certification_name VARCHAR(255),
+
+    issuing_organization VARCHAR(255),
+
+    issue_date DATE,
+    expiry_date DATE,
+
+    credential_id VARCHAR(255),
+    credential_url TEXT,
+
+    description TEXT,
+
+    display_order INTEGER DEFAULT 1,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_by BIGINT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by BIGINT,
+    updated_at TIMESTAMP
+);
+
+
+--- Resume 
+CREATE TABLE resume (
+    resume_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    profile_id BIGINT NOT NULL REFERENCES profile(profile_id),
+
+    title VARCHAR(255),
+
+    resume_type VARCHAR(20),
+
+    template_name VARCHAR(100),
+
+    theme_json JSONB,
+
+    summary_override TEXT,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_by BIGINT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by BIGINT,
+    updated_at TIMESTAMP
+);
+
+CREATE TABLE resume_section (
+    resume_section_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    resume_id BIGINT NOT NULL REFERENCES resume(resume_id) ON DELETE CASCADE,
+
+    section_name VARCHAR(100),
+
+    display_order INTEGER,
+
+    is_visible BOOLEAN DEFAULT TRUE
+);
+
+CREATE TABLE resume_skill (
+    resume_id BIGINT NOT NULL REFERENCES resume(resume_id) ON DELETE CASCADE,
+
+    profile_skill_id BIGINT NOT NULL REFERENCES profile_skill(profile_skill_id),
+
+    display_order INTEGER,
+
+    PRIMARY KEY (resume_id, profile_skill_id)
+);
+
+CREATE TABLE resume_project (
+    resume_id BIGINT NOT NULL REFERENCES resume(resume_id) ON DELETE CASCADE,
+
+    project_id BIGINT NOT NULL REFERENCES profile_project(project_id),
+
+    display_order INTEGER,
+
+    PRIMARY KEY (resume_id, project_id)
+);
+
+CREATE TABLE resume_experience (
+    resume_id BIGINT NOT NULL REFERENCES resume(resume_id) ON DELETE CASCADE,
+
+    experience_id BIGINT NOT NULL REFERENCES profile_experience(experience_id),
+
+    display_order INTEGER,
+
+    PRIMARY KEY (resume_id, experience_id)
+);
+
+CREATE TABLE resume_education (
+    resume_id BIGINT NOT NULL REFERENCES resume(resume_id) ON DELETE CASCADE,
+
+    education_id BIGINT NOT NULL REFERENCES profile_education(education_id),
+
+    display_order INTEGER,
+
+    PRIMARY KEY (resume_id, education_id)
+);
+
+CREATE TABLE resume_certification (
+    resume_id BIGINT NOT NULL REFERENCES resume(resume_id) ON DELETE CASCADE,
+
+    certification_id BIGINT NOT NULL REFERENCES profile_certification(certification_id),
+
+    display_order INTEGER,
+
+    PRIMARY KEY (resume_id, certification_id)
+);
+
+
+--- Job Application 
+CREATE TABLE job_application (
+    job_application_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    profile_id BIGINT NOT NULL REFERENCES profile(profile_id),
+
+    resume_id BIGINT REFERENCES resume(resume_id),
+
+    company_name VARCHAR(255),
+    position VARCHAR(255),
+
+    source VARCHAR(100),
+    job_url TEXT,
+
+    salary VARCHAR(100),
+
+    application_status VARCHAR(50),
+
+    application_date DATE,
+    interview_date DATE,
+    offer_date DATE,
+
+    follow_up_date DATE,
+
+    notes TEXT,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_by BIGINT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by BIGINT,
+    updated_at TIMESTAMP
+);
+
+CREATE TABLE job_application_attachment (
+    attachment_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    job_application_id BIGINT NOT NULL REFERENCES job_application(job_application_id) ON DELETE CASCADE,
+
+    file_name VARCHAR(255),
+    file_url TEXT,
+
+    attachment_type VARCHAR(100),
+
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+--- Application Status 
+CREATE TYPE application_status AS ENUM (
+    'WISHLIST',
+    'PREPARING',
+    'APPLIED',
+    'HR_CALL',
+    'TECHNICAL',
+    'FINAL',
+    'OFFER',
+    'REJECTED',
+    'ACCEPTED'
+);
+ application_status application_status NOT NULL DEFAULT 'WISHLIST'

@@ -1,0 +1,106 @@
+Manage-R — Feature Requirements (v1)
+
+Core Data Management
+--------------------
+- Manage personal profile and contact information.
+- Store multiple work experiences.
+- Store education history, certifications, and training.
+- Manage technical skills with categories.
+- Manage projects with descriptions, tech stack, GitHub, live demo, and attachments.
+- Store achievements, awards, and publications.
+- Support custom sections for additional resume content.
+
+Resume Management
+-----------------
+- Create unlimited resume variants from a single master profile.
+- Enable or disable sections for each resume.
+- Reorder resume sections independently for every variant.
+- Customize profile summaries per resume.
+- Select different projects and skills for different job applications.
+- Save resume version history.
+
+Interactive Resume Builder
+--------------------------
+- Real-time resume preview.
+- Multiple professional resume templates.
+- Drag-and-drop section ordering.
+- Inline editing from the preview.
+- Theme customization (colors, typography, spacing).
+- Print-friendly layout.
+- ATS-friendly resume template.
+
+Export & Sharing
+----------------
+- Export resumes as PDF.
+- Export resume data as JSON.
+- Print resumes directly.
+- Share resumes through a public link (optional).
+
+AI Assistance
+-------------
+- Generate professional profile summaries.
+- Improve experience bullet points.
+- Rewrite project descriptions.
+- Suggest stronger action verbs.
+- Analyze resumes against pasted job descriptions.
+- Recommend missing technical keywords.
+- Calculate approximate ATS match score.
+
+Job Application Management
+--------------------------
+- Maintain a job application tracker.
+- Store company, position, source, salary, application date, and notes.
+- Track application status (Wishlist, Applied, Interview, Offer, Rejected, Accepted).
+- Attach the submitted resume version to each application.
+- Record interview notes and follow-up reminders.
+
+Search & Organization
+---------------------
+- Global search across resumes, projects, skills, and applications.
+- Tag skills, projects, and resumes.
+- Filter resumes by technology stack or job category.
+
+Infrastructure
+--------------
+- Secure authentication.
+- Role-based access control (future multi-user support).
+- Automatic backups.
+- Responsive design.
+- Dockerized deployment.
+- RESTful API with Swagger documentation.
+
+Future Enhancements
+-------------------
+- Portfolio synchronization from the same data source.
+- LinkedIn profile export.
+- Cover letter generation.
+- Email template generation.
+- Browser extension for quick job analysis.
+- Job description parser.
+- Direct integration with Bdjobs, NextJobz, LinkedIn Jobs, and other platforms (where technically and legally supported).
+- Resume analytics and interview statistics.
+- Team/organization support.
+- Cloud storage for certificates and portfolio assets.
+
+
+
+
+##### Suggested enhancements: 
+Master Profile
+      │
+      ├── Resume Variants
+      ├── Job Applications
+      ├── Projects
+      ├── Skills
+      ├── Portfolio
+      ├── Cover Letters
+      └── AI Assistant
+
+JD Comparison
+
+Paste a Job Description
+        ↓
+Highlight Matching Skills
+Highlight Missing Skills
+Recommend Resume Variant
+Generate Tailored Summary
