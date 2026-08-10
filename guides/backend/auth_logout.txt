@@ -1,0 +1,187 @@
+# POST /api/v1/auth/logout
+
+## What this endpoint does
+
+The user presses **Logout** and the backend confirms it. The client must have a
+valid access token (`Authorization: Bearer ...`), and the identity that gets
+logged out is taken from that verified token — never from the request body. The
+endpoint records a `user_logged_out` audit event and returns success. The client
+then discards its access and refresh tokens.
+
+Because Manage-R refresh tokens are stateless JWTs (never persisted), there is
+nothing to revoke in the database. Logout is therefore client-side token
+disposal confirmed by the server. An already-issued access token stays valid
+until it naturally expires (15 minutes); the refresh token also stays valid until
+it expires (7 days) unless the client deletes it. This is the documented
+limitation of a stateless architecture — no `sessions` or `refresh_tokens` table
+was invented just to fake server-side revocation.
+
+## Why do we need logout?
+
+```
+User logs in
+ ↓
+gets access + refresh token
+ ↓
+user chooses Logout
+ ↓
+client discards both tokens
+ ↓
+server logs the logout and confirms success
+```
+
+The backend cannot make already-issued tokens invalid (they are stateless), but
+it must still offer an explicit, safe logout action so the client has a defined
+point where it throws its tokens away.
+
+## Request → Backend → Response
+
+```
+Client (Authorization: Bearer <access-token>)
+ ↓
+Global JwtAuthGuard  (verifies the access token)
+ ↓
+Controller (AuthController.logout)
+ ↓
+@CurrentUser()  (identity from the verified token)
+ ↓
+Auth Service (AuthService.logout)
+ ↓
+Log "user_logged_out" event
+ ↓
+Response { success: true, message: "Logout successful.", data: null }
+```
+
+## 1. Authentication context
+
+Logout is **protected by default** — it does not use `@Public()`. The global
+`JwtAuthGuard` runs before the controller and rejects requests without a valid
+access token (401). `@CurrentUser()` then hands the verified identity to the
+controller:
+
+```ts
+@Post('logout')
+logout(@CurrentUser() user: IAuthenticatedUser): LogoutResponse {
+  return this.authService.logout(user);
+}
+```
+
+`IAuthenticatedUser` is `{ id, email, roles }` and comes from the decoded token,
+so the backend knows exactly which account is logging out. A client cannot say
+"log out user 999" — there is no body field for that.
+
+## 2. Controller
+
+The controller is thin: it receives the request, reads the authenticated user,
+and calls one service method. No revocation logic lives here.
+
+## 3. Service
+
+`AuthService.logout` has the whole business rule — and in this architecture that
+rule is short:
+
+```ts
+logout(user: IAuthenticatedUser): LogoutResponse {
+  this.logger.info(
+    { event: 'user_logged_out', userId: user.id },
+    'User logged out',
+  );
+
+  return { message: 'Logout successful.', data: null };
+}
+```
+
+- Identify the user → from the verified access token, not client input.
+- Revoke refresh token/session → not possible (stateless); nothing to do.
+- Clear cookie → not applicable (no cookies in Manage-R).
+- Return result → a success message with `data: null`.
+
+No DTO and no request body exist because nothing is accepted from the client;
+the global `ValidationPipe` never sees a body for this route.
+
+## 4. Repository
+
+No repository method was added. There is no refresh-token/session table to
+update, so logout performs no Prisma/PostgreSQL work. If sessions are introduced
+later, the revocation write belongs in `AuthRepository`, not the service.
+
+## 5. Refresh-token relationship
+
+```
+Login
+ ↓
+Access Token + Refresh Token (stateless JWT, 7d)
+ ↓
+Refresh
+ ↓
+New Access Token (same stateless refresh token reused, no rotation)
+ ↓
+Logout
+ ↓
+Client discards tokens; server logs the event
+ ↓
+Stateless refresh token still exists until it expires (7d)
+```
+
+The refresh token is **not persisted**, so `POST /auth/refresh` cannot tell a
+"logged out" token from a "logged in" token. Revoking it server-side would
+require a session/denylist store, which is a deliberate future change — not
+something to add silently now.
+
+## 6. Request / Response
+
+```http
+POST /api/v1/auth/logout
+Authorization: Bearer <access-token>
+```
+
+No body.
+
+```json
+{
+  "success": true,
+  "message": "Logout successful.",
+  "data": null
+}
+```
+
+No tokens, no user secrets. Calling logout again with the same token returns the
+same 200 (idempotent).
+
+## 7. Security
+
+- The client cannot provide another user's ID or role: there is no body, and
+  identity comes only from the verified access token.
+- Missing, garbage, expired, or wrong-secret tokens are all rejected with the
+  standard `401 Unauthorized. Please log in.` by the global guard.
+- Token revocation matters in the general case — but with stateless refresh
+  tokens there is nothing to revoke, so the client must delete its own tokens.
+- Logout may not instantly invalidate an already-issued stateless access token;
+  that is expected here and it is why access tokens are kept short-lived (15m).
+- Tokens are never logged: pino redacts `authorization` headers and the service
+  only logs `{ event, userId }`.
+- Logout never returns or involves passwords.
+
+## 8. Full authentication lifecycle
+
+```
+Register
+ ↓
+Login
+ ↓
+Access Token + Refresh Token
+ ↓
+API Requests
+ ↓
+Access Token expires
+ ↓
+Refresh
+ ↓
+New Access Token
+ ↓
+Logout
+ ↓
+Client discards tokens; event logged
+ ↓
+Future refresh only fails if the client no longer has the token
+```

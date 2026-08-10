@@ -1,0 +1,133 @@
+# Write Features — Worked Example: Register
+
+How `POST /api/v1/auth/register` works, end to end.
+
+```
+Request
+  ↓
+DTO
+  ↓
+Controller
+  ↓
+Service
+  ↓
+Repository
+  ↓
+Prisma
+  ↓
+PostgreSQL
+  ↓
+Response
+```
+
+## 1. DTO — what the client may send
+
+```ts
+// src/modules/auth/dto/register.dto.ts
+export class RegisterDto {
+  @IsString() @Length(3, 100) username!: string;
+  @IsEmail() email!: string;
+  @IsOptional() @IsString() @MaxLength(30) phoneNumber?: string;
+  @IsString() @IsStrongPassword() password!: string;
+}
+```
+
+The DTO is the API contract. `class-validator` checks it, and the global
+ValidationPipe rejects any extra field — so a client cannot sneak in `role` or
+`userId`.
+
+## 2. Controller — just passes the request to the service
+
+```ts
+@Public()
+@Post('register')
+register(@Body() dto: RegisterDto) {
+  return this.authService.register(dto);
+}
+```
+
+`@Public()` is needed because the JWT guard protects every route by default —
+you must be able to register before logging in. The controller does no logic.
+
+## 3. Service — the business logic
+
+```ts
+async register(dto: RegisterDto) {
+  await this.assertFieldsAvailable(dto);   // 1. duplicate check
+  const passwordHash = await hashPassword(dto.password); // 2. hash password
+  const user = await this.authRepository.createUserWithProfile({
+    username: dto.username,
+    email: dto.email,
+    phoneNumber: dto.phoneNumber ?? null,
+    passwordHash,
+  });                                      // 3. create account + profile
+  return toRegisteredUserResponse(user);   // 4. return sanitized user
+}
+```
+
+The order matters: reject duplicates before hashing, create the account, and
+never return the hash.
+
+## 4. Repository — the only code that touches the database
+
+```ts
+createUserWithProfile(input) {
+  return this.prisma.sec_user.create({
+    data: {
+      username: input.username,
+      email: input.email,
+      phone_number: input.phoneNumber,
+      password_hash: input.passwordHash,
+      profile: { create: {} },             // empty profile, linked 1:1
+      sec_role: {                          // default USER role
+        connectOrCreate: {
+          where: { role_name: 'USER' },
+          create: { role_name: 'USER' },
+        },
+      },
+    },
+  });
+}
+```
+
+## 5. Database
+
+`prisma.sec_user.create(...)` becomes an `INSERT` into `sec_user` (plus
+`sec_role` and `profile` rows in the same transaction). PostgreSQL returns the
+new row and Prisma turns it back into a JavaScript object.
+
+## 6. Request / response
+
+```http
+POST /api/v1/auth/register
+Content-Type: application/json
+
+{
+  "username": "tasin",
+  "email": "tasin@example.com",
+  "password": "StrongP@ss123"
+}
+```
+
+```json
+{
+  "success": true,
+  "message": "Operation completed successfully.",
+  "data": {
+    "userId": "1",
+    "username": "tasin",
+    "email": "tasin@example.com"
+  }
+}
+```
+
+Note `userId` is a string: the id is a BIGINT in the database, and BIGINTs are
+always converted to strings before JSON output.
+
+## 7. Security — why we do these things
+
+- The password is hashed (bcrypt), so the database never holds the plain text.
+- The role is never accepted from the client; the default `USER` role is chosen server-side.
+- `passwordHash` is never returned; the mapper only exposes safe fields.
+- Duplicate checks turn a collision into a clean `409 Conflict`, not a raw database error.
+- The database's unique constraints on `username`/`email` are the final safety net.

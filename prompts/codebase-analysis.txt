@@ -1,0 +1,5 @@
+analyze the current manage-r-backend codebase, connect to the localhost:5432 postgres database named
+  manage-r-core with user:manageradmin and password:manageradmin, get a very good understanding of the
+  project. The codebase is in boilerplate phase right now, I am working on planning how to write features/
+  endpoints since I have been far away from coding for a long time nor have I worked with Nestjs ever. DO
+  NOT MAKE ANY CHANGES YET WITHOUT MY PERMISSION!!!!!

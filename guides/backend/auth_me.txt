@@ -1,0 +1,214 @@
+# GET /api/v1/auth/me
+
+## What this endpoint does
+
+The client asks **"who am I right now?"** with a valid access token
+(`Authorization: Bearer ...`). The backend reads the account id from the
+*verified token* — it never trusts a userId, email, or username supplied by the
+client — then loads that account from the database and returns a safe identity
+payload: `userId`, `username`, `email`, `phoneNumber`, and the account's current
+`role`.
+
+Because the identity always comes from the token, the endpoint is inherently
+scoped to the caller: a client can only ever see its own account, even if it
+tries to ask for someone else's.
+
+## Why do we need this endpoint?
+
+```
+User has a valid access token
+ ↓
+client wants to know who it is (username/email/role to render the UI)
+ ↓
+GET /auth/me  (Authorization: Bearer <access-token>)
+ ↓
+backend resolves the account from the token, returns safe identity
+```
+
+The frontend needs the account's current profile and role to render navigation,
+guards, and settings. Storing that in the browser after login is stale-prone;
+`/auth/me` gives a fresh, database-backed answer on demand.
+
+## Request → Backend → Response
+
+```
+Client (Authorization: Bearer <access-token>)
+ ↓
+Global JwtAuthGuard  (verifies the access token, 401 if invalid/missing)
+ ↓
+Controller (AuthController.me)
+ ↓
+@CurrentUser()  (identity from the verified token: { id, email, roles })
+ ↓
+Auth Service (AuthService.getMe)
+ ↓
+AuthRepository.findByIdWithRole(sub)   (current database truth)
+ ↓
+404 if account no longer exists | 403 if account disabled
+ ↓
+toMeResponse  (safe mapping — no password hash, no tokens)
+ ↓
+Response { success: true, message, data: { userId, username, email, phoneNumber, role } }
+```
+
+## 1. Authentication context
+
+`/auth/me` is **protected by default** — no `@Public()`. The global `JwtAuthGuard`
+runs before the controller and rejects requests without a valid access token
+with `401 Unauthorized. Please log in.`. `@CurrentUser()` then hands the decoded,
+verified identity to the controller:
+
+```ts
+@Get('me')
+@ApiOperation({ summary: 'Get the currently authenticated user' })
+@ApiStandardResponse(HttpStatus.OK, 'Current user retrieved successfully')
+me(@CurrentUser() user: IAuthenticatedUser): Promise<MeResponse> {
+  return this.authService.getMe(user);
+}
+```
+
+`IAuthenticatedUser` is `{ id, email, roles }` and comes from the token. The
+endpoint accepts **no** body, no query parameters, and no user-identifying
+headers — there is no field through which a client could ask for a different
+account. Spoofing attempts (e.g. `?userId=2`, `X-User-Id: 2`) are simply
+ignored.
+
+## 2. Controller
+
+Thin: it receives the request, reads the authenticated user, and calls one
+service method. No lookup or mapping logic lives here.
+
+## 3. Service
+
+`AuthService.getMe` holds the whole flow:
+
+```ts
+async getMe(user: IAuthenticatedUser): Promise<MeResponse> {
+  const account = await this.authRepository.findByIdWithRole(user.id);
+
+  if (!account) {
+    throw new NotFoundException(ERROR_MESSAGES.USER_NOT_FOUND);
+  }
+
+  if (!account.is_active) {
+    throw new ForbiddenException(ERROR_MESSAGES.ACCOUNT_DISABLED);
+  }
+
+  return toMeResponse(account);
+}
+```
+
+1. Load the account by the authenticated user's id (from the JWT `sub`).
+2. `404 User not found.` if the account no longer exists (deleted after the
+   token was issued).
+3. `403 Your account has been disabled.` if inactive — the same policy login
+   and refresh use.
+4. Map to a safe response.
+
+**Why the role comes from the database, not the JWT:** the token's `roles` claim
+may be stale (a role could have changed since signing). `/auth/me` reads the
+current `sec_role` row, so the answer always reflects the account's true current
+state. The JWT is still required to know *who* is asking.
+
+## 4. Repository
+
+`AuthRepository.findByIdWithRole(id)` — already added in Phase 3 (refresh) —
+loads the `sec_user` row by its BIGINT id (passed as a string from the JWT) and
+includes the `sec_role` relation:
+
+```ts
+findByIdWithRole(id: string): Promise<UserWithRole | null> {
+  return this.prisma.sec_user.findUnique({
+    where: { user_id: BigInt(id) },
+    include: { sec_role: true },
+  });
+}
+```
+
+No repository change was needed for this endpoint.
+
+## 5. Mapper — what is safe to return
+
+```ts
+export interface MeResponse {
+  userId: string;      // BIGINT serialized as a string
+  username: string;
+  email: string;
+  phoneNumber: string | null;
+  role: string;        // role_name from the current sec_role row
+}
+
+export function toMeResponse(account: UserWithRole): MeResponse {
+  return {
+    userId: account.user_id.toString(),
+    username: account.username,
+    email: account.email,
+    phoneNumber: account.phone_number,
+    role: account.sec_role.role_name,
+  };
+}
+```
+
+Never returned: `password_hash`, tokens, `is_active`, `role_id`, or any internal
+bookkeeping fields. The BIGINT `user_id` is stringified because
+`JSON.stringify` cannot serialize JavaScript `bigint`.
+
+## 6. Request / Response
+
+```http
+GET /api/v1/auth/me
+Authorization: Bearer <access-token>
+```
+
+No body, no query parameters.
+
+```json
+{
+  "success": true,
+  "message": "Operation completed successfully.",
+  "data": {
+    "userId": "1",
+    "username": "tasin",
+    "email": "tasin@example.com",
+    "phoneNumber": "017XXXXXXXX",
+    "role": "USER"
+  }
+}
+```
+
+## 7. Security
+
+- Identity comes **only** from the verified access token. `?userId`, request
+  bodies, and `X-User-Id` headers are ignored, so a client can never read
+  another account (no IDOR).
+- Missing, garbage, expired, or wrong-secret tokens → standard
+  `401 Unauthorized. Please log in.` from the global guard. A refresh token used
+  as an access token also fails (different secret).
+- Deleted account with a still-valid token → `404`, so the client knows to
+  re-authenticate.
+- Disabled account → `403`, matching login and refresh.
+- No sensitive fields are ever returned; the response is a strict whitelist via
+  the mapper.
+- Passwords and tokens are never involved in, or returned by, this endpoint.
+
+## 8. Full authentication lifecycle
+
+```
+Register
+ ↓
+Login
+ ↓
+Access Token + Refresh Token
+ ↓
+API Requests (Authorization: Bearer <access-token>)
+ ↓
+GET /auth/me → fresh identity + current role from the database
+ ↓
+Access Token expires
+ ↓
+Refresh
+ ↓
+New Access Token
+ ↓
+Logout → client discards tokens
+```

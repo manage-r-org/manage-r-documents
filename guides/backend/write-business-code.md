@@ -693,6 +693,335 @@ Before opening a pull request for any module, review all of these.
 
 ---
 
+# A Real Example: Fetching a Resume
+
+> [!NOTE]
+> The `ResumeModule` is still a placeholder in the repository. The endpoint below
+> is the intended implementation using the project's real decorators, exceptions,
+> response interceptor, and Prisma schema. Treat every code block as
+> example/representative until the feature is built.
+
+This section walks one complete endpoint end to end: **fetch a single resume by
+its public UUID**.
+
+**The requirement, in plain words:** a logged-in user wants to fetch one of their
+own resumes.
+
+```text
+GET /api/v1/resumes/550e8400-e29b-41d4-a716-446655440000
+```
+
+Why `publicId` and not the BIGINT `resume_id`? The internal `resume_id` is a
+database implementation detail; `public_id` is the UUID the app is allowed to
+share. One user must never fetch another user's resume, so the endpoint must
+prove who is asking (authentication) and check that the resume belongs to them
+(authorization).
+
+The whole path: Frontend → HTTP → Authentication → DTO → Controller → Service →
+Repository → Prisma → PostgreSQL → Mapper → Response → Frontend.
+
+## 1. Start with the requirement
+
+- `publicId` is used instead of the BIGINT `resume_id` — it is the safe, shareable identifier.
+- Users must not access another user's resume.
+- Authentication (`Authorization: Bearer ...`) identifies the current user.
+- The service verifies ownership before returning data.
+- The repository fetches the data, with the ownership rule baked into the query.
+
+## 2. The database relationship (only what this endpoint needs)
+
+```text
+sec_user
+   │  (user_id)
+   └── profile
+          │  (profile_id)
+          └── resume
+                 ├── resume_skill
+                 ├── resume_education
+                 ├── resume_experience
+                 ├── resume_project
+                 └── resume_certification
+```
+
+A user owns exactly one profile, a profile owns many resumes, and each resume
+links to its sections through the `resume_*` join tables. Ownership is the
+`sec_user → profile → resume` chain.
+
+## 3. The HTTP request
+
+```http
+GET /api/v1/resumes/550e8400-e29b-41d4-a716-446655440000
+Authorization: Bearer <access-token>
+```
+
+- `/api/v1` is added globally; the controller only declares `/resumes/:publicId`.
+- `:publicId` is the resume's public UUID.
+- `Authorization: Bearer <access-token>` carries the signed JWT that proves who the caller is.
+
+## 4. DTO / parameter validation
+
+Nest parses the path parameter before any controller logic runs. Manage-R validates
+route parameters with the shared `ParseUuidPipe` (in `common/pipes/`), which rejects
+anything that is not a well-formed UUID v4 with a 400:
+
+```ts
+@Get(':publicId')
+findOne(
+  @Param('publicId', ParseUuidPipe) publicId: string,
+  @CurrentUser() user: IAuthenticatedUser,
+) {
+  return this.resumeService.findByPublicId(publicId, user.id);
+}
+```
+
+Bad input fails fast at the boundary, before we ever touch the database. Only
+valid input reaches the service.
+
+## 5. The controller
+
+`ResumeController` (`modules/resume/resume.controller.ts`) — intended shape:
+
+```ts
+@ApiTags('Resume')
+@Controller('resumes')
+export class ResumeController {
+  constructor(private readonly resumeService: ResumeService) {}
+
+  @Get(':publicId')
+  findOne(
+    @Param('publicId', ParseUuidPipe) publicId: string,
+    @CurrentUser() user: IAuthenticatedUser,
+  ) {
+    return this.resumeService.findByPublicId(publicId, user.id);
+  }
+}
+```
+
+The controller receives the request and passes validated input plus the
+authenticated user to the service. It does **not** query PostgreSQL itself.
+
+## 6. The authentication flow
+
+```mermaid
+sequenceDiagram
+    participant F as Frontend
+    participant G as JWT Guard
+    participant C as Controller
+    participant U as Current User
+    F->>G: GET /resumes/:publicId + Bearer token
+    G->>C: token verified, request continues
+    C->>U: @CurrentUser() resolves user.id
+```
+
+- The JWT guard verifies the access token and attaches the identity to the request.
+- `@CurrentUser()` makes that identity available to the controller.
+- The client never tells us which user owns the resume.
+
+> [!WARNING]
+> Never trust a `userId` from the request body, a query parameter, or the URL.
+> The authenticated identity comes only from the verified token.
+
+## 7. The service
+
+`ResumeService` (`modules/resume/resume.service.ts`) — representative:
+
+```ts
+async findByPublicId(publicId: string, userId: string) {
+  const resume = await this.resumeRepository.findByPublicIdAndUserId(publicId, userId);
+
+  if (!resume) {
+    throw new NotFoundException('Resume not found.');
+  }
+
+  return toResumeResponse(resume);
+}
+```
+
+The service receives the `publicId` and the authenticated `userId`, applies the
+ownership rule by passing both to the repository, handles "not found", and maps
+the result before returning it.
+
+- **Authentication answers:** "Who are you?"
+- **Authorization answers:** "Are you allowed to access this resume?"
+
+## 8. The repository
+
+`ResumeRepository` (`modules/resume/resume.repository.ts`) — representative:
+
+```ts
+async findByPublicIdAndUserId(publicId: string, userId: string) {
+  return this.prisma.resume.findFirst({
+    where: {
+      public_id: publicId,
+      profile: { user_id: BigInt(userId) },
+    },
+    include: { ... },
+  });
+}
+```
+
+The query ensures **both**: the `public_id` matches **and** the resume's profile
+belongs to the authenticated user. The repository knows how to retrieve data; it
+does not decide whether access is allowed — the service made that decision by
+requesting this ownership-scoped method.
+
+## 9. The Prisma query
+
+Using the real model and relation names from `prisma/schema.prisma`:
+
+```ts
+this.prisma.resume.findFirst({
+  where: {
+    public_id: publicId,
+    profile: { user_id: BigInt(userId) },
+  },
+  include: {
+    resume_skill: {
+      include: { profile_skill: { include: { master_skill: true } } },
+    },
+    resume_education: true,
+    resume_experience: {
+      include: { experience_responsibility: { orderBy: { display_order: 'asc' } } },
+    },
+    resume_project: true,
+    resume_certification: true,
+  },
+});
+```
+
+`findFirst` returns `null` when nothing matches, so "not found" is a natural
+result of the query. `user_id` is a BIGINT column, so the string id is converted
+with `BigInt(userId)` before Prisma runs the query.
+
+## 10. The database result
+
+PostgreSQL returns rows; Prisma converts them into a plain TypeScript object — a
+`resume` with nested `resume_skill`, `resume_education`, and other arrays. The
+service never sees raw SQL; it sees structured data.
+
+## 11. Mapping
+
+Database structure and API response structure do not have to be identical. A
+mapper converts persistence shape to API shape:
+
+```text
+Database:          API:
+resume_id          id
+public_id          publicId
+resume_category_id category
+```
+
+Representative mapper (`modules/resume/mappers/`):
+
+```ts
+export function toResumeResponse(resume: ResumeWithRelations): ResumeResponseDto {
+  return {
+    id: resume.resume_id.toString(),
+    publicId: resume.public_id,
+    title: resume.title,
+    skills: resume.resume_skill.map((rs) => ({
+      name: rs.profile_skill.master_skill.skill_name,
+    })),
+    education: resume.resume_education.map(/* ... */),
+  };
+}
+```
+
+BIGINT values are converted to strings here so JSON serialization never breaks.
+
+## 12. The final response
+
+The global `TransformResponseInterceptor` wraps the service result automatically:
+
+```json
+{
+  "success": true,
+  "message": "Operation completed successfully.",
+  "data": {
+    "id": "42",
+    "publicId": "550e8400-e29b-41d4-a716-446655440000",
+    "title": "Backend Developer Resume",
+    "skills": [],
+    "education": [],
+    "experience": [],
+    "projects": [],
+    "certifications": []
+  }
+}
+```
+
+The controller returns plain data; the interceptor adds the `success`, `message`,
+`data` envelope.
+
+## 13. The complete flow
+
+```text
+Frontend
+   │
+   │ GET /resumes/:publicId
+   ▼
+JWT Guard
+   │
+   ▼
+Controller
+   │
+   ▼
+DTO validation
+   │
+   ▼
+ResumeService
+   │
+   │ publicId + authenticated userId
+   ▼
+ResumeRepository
+   │
+   ▼
+Prisma
+   │
+   ▼
+PostgreSQL
+   │
+   ▼
+Prisma result
+   │
+   ▼
+Mapper
+   │
+   ▼
+Service
+   │
+   ▼
+Controller / Interceptor
+   │
+   ▼
+JSON Response
+   │
+   ▼
+Frontend
+```
+
+1. The frontend sends `GET /resumes/:publicId` with a Bearer token.
+2. The JWT guard verifies the token and attaches the user identity.
+3. The controller validates `publicId` and calls the service with it plus `user.id`.
+4. The service asks the repository for a resume matching the publicId **and** the user.
+5. Prisma executes the query in PostgreSQL; the result returns as a typed object.
+6. The service maps the result to an API-safe shape (BIGINTs as strings).
+7. The interceptor wraps the data in the standard envelope and returns it to the frontend.
+
+## 14. When you build a new endpoint
+
+- 1. What data does the endpoint need?
+- 2. What DTO validates the input?
+- 3. Is authentication required?
+- 4. Who is allowed to access the resource?
+- 5. What business rule belongs in the service?
+- 6. What database operation belongs in the repository?
+- 7. Does the response need mapping?
+- 8. What should the frontend receive?
+- 9. What errors can occur?
+
+---
+
 # Common Mistakes
 
 | Mistake | Why it hurts | Better approach |

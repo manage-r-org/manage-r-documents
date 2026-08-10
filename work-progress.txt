@@ -1,0 +1,167 @@
+Manage-R API Development Checklist
+⬜ Not started | 🟡 In progress | ✅ Done | 🔴 Needs revision
+
+Phase 1 — Health & Authentication
+| # | Endpoint                     | Status |
+| - | ---------------------------- | ------ |
+| 1 | `GET /api/v1/health`         | ✅      |
+| 2 | `POST /api/v1/auth/register` | ✅      |
+| 3 | `POST /api/v1/auth/login`    | ✅      |
+| 4 | `POST /api/v1/auth/refresh`  | ✅      |
+| 5 | `POST /api/v1/auth/logout`   | ✅      |
+| 6 | `GET /api/v1/auth/me`        | ✅      |
+
+Phase 2 — User & Profile
+| #  | Endpoint                 | Status |
+| -- | ------------------------ | ------ |
+| 7  | `GET /api/v1/profile`    | ⬜      |
+| 8  | `POST /api/v1/profile`   | ⬜      |
+| 9  | `PATCH /api/v1/profile`  | ⬜      |
+| 10 | `DELETE /api/v1/profile` | ⬜      |
+
+Phase 3 — Education
+| #  | Endpoint                       | Status |
+| -- | ------------------------------ | ------ |
+| 11 | `POST /api/v1/education`       | ⬜      |
+| 12 | `GET /api/v1/education`        | ⬜      |
+| 13 | `GET /api/v1/education/:id`    | ⬜      |
+| 14 | `PATCH /api/v1/education/:id`  | ⬜      |
+| 15 | `DELETE /api/v1/education/:id` | ⬜      |
+
+Phase 4 — Experience
+| #  | Endpoint                        | Status |
+| -- | ------------------------------- | ------ |
+| 16 | `POST /api/v1/experience`       | ⬜      |
+| 17 | `GET /api/v1/experience`        | ⬜      |
+| 18 | `GET /api/v1/experience/:id`    | ⬜      |
+| 19 | `PATCH /api/v1/experience/:id`  | ⬜      |
+| 20 | `DELETE /api/v1/experience/:id` | ⬜      |
+
+Phase 5 — Projects
+| #  | Endpoint                     | Status |
+| -- | ---------------------------- | ------ |
+| 21 | `POST /api/v1/project`       | ⬜      |
+| 22 | `GET /api/v1/project`        | ⬜      |
+| 23 | `GET /api/v1/project/:id`    | ⬜      |
+| 24 | `PATCH /api/v1/project/:id`  | ⬜      |
+| 25 | `DELETE /api/v1/project/:id` | ⬜      |
+
+Phase 6 — Certifications
+| #  | Endpoint                           | Status |
+| -- | ---------------------------------- | ------ |
+| 26 | `POST /api/v1/certification`       | ⬜      |
+| 27 | `GET /api/v1/certification`        | ⬜      |
+| 28 | `GET /api/v1/certification/:id`    | ⬜      |
+| 29 | `PATCH /api/v1/certification/:id`  | ⬜      |
+| 30 | `DELETE /api/v1/certification/:id` | ⬜      |
+
+Phase 7 — Skills
+This is where the master skill + profile_skill relationship becomes useful.
+Master skills, These should eventually be admin-managed.
+| #  | Endpoint.                           | Status |
+| -- | ----------------------------------- | ------ |
+| 31 | `GET /api/v1/skills`                | ⬜     |
+| 32 | `GET /api/v1/skills/:id`            | ⬜     |
+Don't let ordinary users arbitrarily create global master skills unless we've explicitly decided they can.
+| #  | Endpoint                            | Status |
+| -- | ----------------------------------- | ------ |
+| 33 | `POST /api/v1/profile/skills`       | ⬜      |
+| 34 | `GET /api/v1/profile/skills`        | ⬜      |
+| 35 | `PATCH /api/v1/profile/skills/:id`  | ⬜      |
+| 36 | `DELETE /api/v1/profile/skills/:id` | ⬜      |
+
+Phase 8 — Resume Management
+At this point the user already has:
+Profile
+ ├── Education
+ ├── Experience
+ ├── Projects
+ ├── Certifications
+ └── Skills
+Now we compose those into different resumes.
+| #  | Endpoint                          | Status |
+| -- | --------------------------------- | ------ |
+| 37 | `POST /api/v1/resume`             | ⬜      |
+| 38 | `GET /api/v1/resume`              | ⬜      |
+| 39 | `GET /api/v1/resume/:publicId`    | ⬜      |
+| 40 | `PATCH /api/v1/resume/:publicId`  | ⬜      |
+| 41 | `DELETE /api/v1/resume/:publicId` | ⬜      |
+
+Phase 9 — Resume Composition
+The resume needs to decide which pieces of the user's information are included.
+| #  | Endpoint                                                          | Status |
+| -- | ----------------------------------------------------------------- | ------ |
+| 42 | `POST /api/v1/resume/:publicId/skills`                            | ⬜      |
+| 43 | `DELETE /api/v1/resume/:publicId/skills/:skillId`                 | ⬜      |
+| 44 | `POST /api/v1/resume/:publicId/education`                         | ⬜      |
+| 45 | `DELETE /api/v1/resume/:publicId/education/:educationId`          | ⬜      |
+| 46 | `POST /api/v1/resume/:publicId/experience`                        | ⬜      |
+| 47 | `DELETE /api/v1/resume/:publicId/experience/:experienceId`        | ⬜      |
+| 48 | `POST /api/v1/resume/:publicId/projects`                          | ⬜      |
+| 49 | `DELETE /api/v1/resume/:publicId/projects/:projectId`             | ⬜      |
+| 50 | `POST /api/v1/resume/:publicId/certifications`                    | ⬜      |
+| 51 | `DELETE /api/v1/resume/:publicId/certifications/:certificationId` | ⬜      |
+
+Phase 10 — Resume Templates
+Once resumes work as data, we introduce presentation.
+| #  | Endpoint                                  | Status |
+| -- | ----------------------------------------- | ------ |
+| 52 | `GET /api/v1/resume-templates`            | ⬜      |
+| 53 | `GET /api/v1/resume-templates/:id`        | ⬜      |
+| 54 | `PATCH /api/v1/resume/:publicId/template` | ⬜      |
+
+Phase 11 — Resume Preview / PDF
+Now we finally turn the structured resume into something humans can actually look at.
+| #  | Endpoint                               | Status |
+| -- | -------------------------------------- | ------ |
+| 55 | `GET /api/v1/resume/:publicId/preview` | ⬜      |
+| 56 | `GET /api/v1/resume/:publicId/pdf`     | ⬜      |
+
+Phase 12 — Public Resume
+This is one of the reasons we chose resume_id BIGINT and public_id UUID
+| #  | Endpoint                                   | Status |
+| -- | ------------------------------------------ | ------ |
+| 57 | `GET /api/v1/public/resumes/:publicId`     | ⬜      |
+| 58 | `GET /api/v1/public/resumes/:publicId/pdf` | ⬜      |
+
+Phase 13 — Job Applications
+Your Google-Sheet replacement. This has nothing to do with job-portal integration yet.
+| #  | Endpoint                              | Status |
+| -- | ------------------------------------- | ------ |
+| 59 | `POST /api/v1/job-applications`       | ⬜      |
+| 60 | `GET /api/v1/job-applications`        | ⬜      |
+| 61 | `GET /api/v1/job-applications/:id`    | ⬜      |
+| 62 | `PATCH /api/v1/job-applications/:id`  | ⬜      |
+| 63 | `DELETE /api/v1/job-applications/:id` | ⬜      |
+
+Phase 14 — Admin / Master Data
+Only after the user-facing functionality is solid.
+| #  | Endpoint                  | Status |
+| -- | ------------------------- | ------ |
+| 64 | `GET /api/v1/roles`       | ⬜      |
+| 65 | `POST /api/v1/roles`      | ⬜      |
+| 66 | `PATCH /api/v1/roles/:id` | ⬜      |
+Skills administration
+| #  | Endpoint                    | Status |
+| -- | --------------------------- | ------ |
+| 67 | `POST /api/v1/skills`       | ⬜      |
+| 68 | `PATCH /api/v1/skills/:id`  | ⬜      |
+| 69 | `DELETE /api/v1/skills/:id` | ⬜      |
+Resume categories
+| #  | Endpoint                               | Status |
+| -- | -------------------------------------- | ------ |
+| 70 | `GET /api/v1/resume-categories`        | ⬜      |
+| 71 | `POST /api/v1/resume-categories`       | ⬜      |
+| 72 | `PATCH /api/v1/resume-categories/:id`  | ⬜      |
+| 73 | `DELETE /api/v1/resume-categories/:id` | ⬜      |
+
+
+
+The Actual Development Order To Follow: 
+AUTH => PROFILE => EDUCATION => EXPERIENCE => PROJECT => CERTIFICATION => 
+SKILLS => RESUME => RESUME COMPOSITION => TEMPLATE => PREVIEW/PDF => 
+PUBLIC RESUME => JOB APPLICATION => ADMIN
+
+
+And for every module, follow the same implementation rhythm:
+Database => Primsa => DTO => Repository => Service => Controller => Auth/Ownership => Response => Test Endpoint => Commit 

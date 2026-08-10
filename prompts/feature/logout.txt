@@ -1,0 +1,786 @@
+# Implement `POST /api/v1/auth/logout`
+
+You are working inside the existing **Manage-R backend** codebase.
+
+Implement the next authentication feature:
+
+```http
+POST /api/v1/auth/logout
+```
+
+The following authentication features have already been implemented:
+
+```text
+POST /api/v1/auth/register
+POST /api/v1/auth/login
+POST /api/v1/auth/refresh
+```
+
+**Use the existing implementations as the source of truth. Do not redesign the authentication architecture.**
+
+The logout implementation must be compatible with the refresh-token mechanism that currently exists in the codebase.
+
+---
+
+# 1. Inspect before changing anything
+
+Before writing code, inspect:
+
+```text
+src/modules/auth/**
+src/modules/users/**
+src/common/**
+src/config/**
+src/database/**
+prisma/schema.prisma
+```
+
+Especially inspect the actual implementations of:
+
+```text
+POST /api/v1/auth/register
+POST /api/v1/auth/login
+POST /api/v1/auth/refresh
+```
+
+Inspect:
+
+* Auth controller
+* Auth service
+* Auth repository
+* JWT strategies
+* JWT guards
+* JWT configuration
+* DTOs
+* authenticated-user interface
+* token generation/verification logic
+* refresh-token storage/rotation logic
+* session/token persistence if present
+* exception handling
+* response format
+* Prisma schema
+* database repositories
+
+Also inspect:
+
+```text
+/Users/tasinsc/Learning/manage-r/manage-r-documents/work-progress.txt
+/Users/tasinsc/Learning/manage-r/manage-r-documents/guides/backend/write-business-code.md
+```
+
+The existing codebase is the source of truth.
+
+---
+
+# 2. Determine the actual logout strategy
+
+Before implementing logout, determine how the existing refresh-token implementation works.
+
+Specifically establish:
+
+```text
+Is the refresh token:
+A. Stateless only?
+B. Persisted in PostgreSQL?
+C. Associated with a session/token record?
+D. Rotated during refresh?
+E. Stored using a hash/fingerprint?
+```
+
+Then implement logout using that existing mechanism.
+
+## Important
+
+Do **not** blindly create:
+
+```text
+token_blacklist
+sessions
+refresh_tokens
+Redis
+```
+
+or any other new persistence mechanism unless the existing authentication architecture actually requires it.
+
+Do not redesign the database just to implement logout.
+
+If the current refresh-token architecture cannot support secure server-side logout/revocation, identify the limitation clearly and implement the safest behavior supported by the current architecture.
+
+---
+
+# 3. Endpoint
+
+Implement:
+
+```http
+POST /api/v1/auth/logout
+```
+
+The endpoint should invalidate the user's authentication session according to the existing refresh-token architecture.
+
+The conceptual flow is:
+
+```text
+Authenticated Client
+        ↓
+POST /auth/logout
+        ↓
+Authenticate request if required
+        ↓
+Identify user/session/token
+        ↓
+Invalidate refresh token/session
+        ↓
+Clear refresh-token cookie if applicable
+        ↓
+Return success
+```
+
+---
+
+# 4. Decide whether logout requires an access token
+
+Inspect the existing authentication architecture.
+
+If logout operates on the authenticated user's current session and the project already uses:
+
+```text
+JwtAuthGuard
+CurrentUser
+```
+
+then protect the endpoint appropriately.
+
+For example:
+
+```text
+POST /api/v1/auth/logout
+        ↓
+JwtAuthGuard
+        ↓
+CurrentUser
+        ↓
+AuthController
+        ↓
+AuthService
+```
+
+However, if the existing refresh-token/session architecture requires the refresh token itself to identify the session being revoked, follow that architecture instead.
+
+**Do not blindly require both tokens if the existing design does not need both.**
+
+The endpoint must not depend on a token that the client cannot reasonably provide.
+
+---
+
+# 5. Request
+
+Follow the token transport convention established by login and refresh.
+
+If refresh tokens are currently sent in the request body, logout may use:
+
+```json
+{
+  "refreshToken": "..."
+}
+```
+
+If refresh tokens are stored in an HTTP-only cookie, logout should operate on that cookie and clear it.
+
+If the existing architecture uses authenticated user/session information instead, follow that implementation.
+
+**Do not introduce a new token transport mechanism for logout.**
+
+---
+
+# 6. DTO
+
+Only create a logout DTO if the existing architecture requires request-body data.
+
+For example, if the refresh token is explicitly supplied in the request body:
+
+```ts
+export class LogoutDto {
+  @IsString()
+  @IsNotEmpty()
+  refreshToken: string;
+}
+```
+
+Do not create a DTO unnecessarily if logout can obtain everything it needs from:
+
+```text
+CurrentUser
+request cookie
+existing authentication context
+```
+
+Follow existing project conventions.
+
+Never accept these from the client:
+
+```text
+userId
+role
+```
+
+to decide which account should be logged out.
+
+The authenticated identity/session must determine the target.
+
+---
+
+# 7. Logout business logic
+
+The Auth Service should contain the business logic.
+
+Conceptually:
+
+```text
+logout request
+      ↓
+identify authenticated user/session
+      ↓
+identify refresh token/session if required
+      ↓
+invalidate/revoke it
+      ↓
+clear cookie if applicable
+      ↓
+return success
+```
+
+Do not put this business logic inside the controller.
+
+---
+
+# 8. Refresh-token revocation
+
+This is the most important part of logout.
+
+If refresh tokens are persisted or associated with a session:
+
+```text
+logout
+  ↓
+find active refresh token/session
+  ↓
+revoke/invalidate
+  ↓
+future /auth/refresh
+  ↓
+reject revoked token
+```
+
+After successful logout, the previously valid refresh token must no longer be usable if the current architecture supports server-side revocation.
+
+If refresh-token rotation is already implemented, make logout compatible with it.
+
+Do not accidentally revoke every session belonging to the user unless that is the existing product behavior.
+
+Prefer revoking the **current session/token** when the architecture supports multiple sessions.
+
+---
+
+# 9. Access token behavior
+
+Understand the difference:
+
+```text
+Access Token
+    ↓
+short-lived
+    ↓
+usually stateless
+```
+
+and:
+
+```text
+Refresh Token
+    ↓
+longer-lived
+    ↓
+used to obtain new access tokens
+```
+
+If the current architecture uses stateless access tokens, logout does not necessarily make an already-issued access token immediately invalid.
+
+That is acceptable if it matches the existing architecture.
+
+The critical requirement is:
+
+```text
+After logout:
+the refresh mechanism must no longer allow
+the logged-out session to obtain new access tokens
+```
+
+Do not invent an access-token blacklist unless the existing architecture explicitly uses one.
+
+Document this behavior clearly.
+
+---
+
+# 10. Cookie handling
+
+If the current implementation stores the refresh token in an HTTP-only cookie:
+
+Logout must clear that cookie using the same cookie name and compatible cookie settings.
+
+Conceptually:
+
+```text
+login
+ ↓
+set refresh cookie
+
+logout
+ ↓
+clear refresh cookie
+ ↓
+revoke server-side refresh session if supported
+```
+
+Do not change:
+
+```text
+httpOnly
+secure
+sameSite
+path
+domain
+```
+
+unless there is a clear reason and it matches the existing configuration.
+
+Reuse existing cookie constants/configuration if available.
+
+---
+
+# 11. Repository responsibilities
+
+Follow the existing repository abstraction.
+
+The repository should handle persistence operations such as:
+
+```text
+find refresh-token/session
+revoke refresh-token/session
+delete session
+mark session inactive
+```
+
+Use whichever mechanism the existing implementation already uses.
+
+Do not put Prisma queries directly inside:
+
+```text
+Controller
+Service
+```
+
+when the project's architecture expects repository access.
+
+Keep:
+
+```text
+Controller → HTTP concerns
+Service    → business logic
+Repository → persistence
+Prisma     → database access
+```
+
+---
+
+# 12. Controller
+
+Keep the controller thin.
+
+The controller should primarily:
+
+```text
+receive request
+     ↓
+obtain authenticated user/token context
+     ↓
+call AuthService.logout(...)
+     ↓
+return standard response
+```
+
+Do not implement token revocation logic in the controller.
+
+---
+
+# 13. Response
+
+Follow the existing standard API response structure.
+
+A successful logout can be as simple as:
+
+```json
+{
+  "success": true,
+  "data": null,
+  "message": "Logout successful"
+}
+```
+
+Use the project's actual response/interceptor conventions.
+
+Do not return:
+
+```text
+refreshToken
+accessToken
+passwordHash
+user secrets
+```
+
+There is no reason to return tokens during logout.
+
+---
+
+# 14. Idempotency
+
+Logout should preferably be safe to call more than once.
+
+For example:
+
+```text
+First logout
+    ↓
+session revoked
+    ↓
+200 success
+
+Second logout
+    ↓
+session already revoked/not found
+    ↓
+safe success or appropriate existing auth response
+```
+
+Follow the project's existing semantics.
+
+Do not make logout unnecessarily fragile.
+
+---
+
+# 15. Security requirements
+
+Ensure:
+
+* refresh tokens are never logged
+* access tokens are never logged
+* passwords are never involved in logout
+* user identity comes from authenticated context/token/session
+* client cannot choose another user's `userId`
+* client cannot choose another user's role
+* raw Prisma errors are not returned
+* refresh-token/session revocation cannot affect another user
+* existing authentication guards remain intact
+* existing rate limiting remains active
+* existing security middleware remains intact
+
+If refresh tokens are persisted, ensure revocation is performed safely and transactionally where appropriate.
+
+---
+
+# 16. Multiple sessions
+
+Inspect whether the current database/authentication design supports multiple simultaneous sessions.
+
+If it does:
+
+```text
+Laptop session
+Phone session
+Browser session
+```
+
+logout should normally invalidate the **current session**, not every session belonging to the user.
+
+Do not implement global logout unless the existing product requirements explicitly specify it.
+
+If the current implementation does not track individual sessions, document that limitation instead of pretending it does.
+
+---
+
+# 17. Error handling
+
+Use the existing exception hierarchy and global exception filter.
+
+At minimum handle appropriately:
+
+```text
+401 → unauthenticated/invalid authentication context
+400 → malformed logout request if applicable
+500 → unexpected application/database error
+```
+
+Do not expose internal database/token details.
+
+Follow the existing error response format.
+
+---
+
+# 18. Tests
+
+Add/update focused tests following the existing testing conventions.
+
+At minimum verify:
+
+```text
+✓ authenticated user can log out
+✓ logout invalidates the current refresh session/token when supported
+✓ revoked refresh token cannot be used with /auth/refresh
+✓ logout cannot revoke another user's session
+✓ unauthenticated request is handled correctly
+✓ repeated logout is handled safely
+✓ refresh cookie is cleared if cookies are used
+✓ sensitive tokens are not logged
+✓ password information is never returned
+```
+
+If the architecture supports multiple sessions, additionally verify:
+
+```text
+✓ logout invalidates only the current session
+✓ another active session remains valid
+```
+
+Run:
+
+```bash
+npm run lint
+npm run build
+npm test
+```
+
+Do not disable lint rules or weaken tests to make the implementation pass.
+
+---
+
+# 19. Update work progress
+
+After the endpoint is implemented and verified, update:
+
+```text
+/Users/tasinsc/Learning/manage-r/manage-r-documents/work-progress.txt
+```
+
+Find:
+
+```text
+POST /api/v1/auth/logout
+```
+
+and mark it:
+
+```text
+✅ DONE
+```
+
+Preserve the existing formatting.
+
+Do not modify unrelated endpoint statuses.
+
+Only mark it DONE after the implementation actually works.
+
+---
+
+# 20. Create the feature guide
+
+Create/update:
+
+```text
+/Users/tasinsc/Learning/manage-r/manage-r-documents/guides/backend/auth_logout.txt
+```
+
+Write a **short, beginner-friendly implementation guide** based on the actual implementation.
+
+This is a personal learning/reference document.
+
+Do not write a generic authentication tutorial.
+
+Use this structure:
+
+```text
+# POST /api/v1/auth/logout
+
+## What this endpoint does
+
+Explain in 2–4 simple sentences.
+
+## Why do we need logout?
+
+Explain simply:
+
+User logs in
+ ↓
+gets access + refresh token
+ ↓
+user chooses Logout
+ ↓
+refresh session/token is invalidated
+ ↓
+future refresh attempts fail
+
+Also briefly explain whether an already-issued access token remains valid until expiration in the current architecture.
+
+## Request → Backend → Response
+
+Show the actual flow:
+
+Client
+ ↓
+JwtAuthGuard / authentication context
+ ↓
+Controller
+ ↓
+Auth Service
+ ↓
+Repository
+ ↓
+PostgreSQL
+ ↓
+Token/session invalidation
+ ↓
+Response
+
+Use the actual architecture.
+
+## 1. Authentication context
+
+Show the essential guard/current-user code if relevant.
+
+Explain how the backend knows which user/session is logging out.
+
+## 2. Controller
+
+Show the essential logout controller method.
+
+Explain why the controller is thin.
+
+## 3. Service
+
+Show the essential business logic:
+
+identify user/session
+→ revoke refresh token/session
+→ clear cookie if applicable
+→ return result
+
+## 4. Repository
+
+Show only the important persistence operation.
+
+Explain how it reaches PostgreSQL.
+
+## 5. Refresh-token relationship
+
+Briefly explain:
+
+Login
+ ↓
+Refresh token
+ ↓
+Refresh
+ ↓
+Logout
+ ↓
+Refresh token/session revoked
+ ↓
+Refresh fails
+
+## 6. Request / Response
+
+Show the actual logout request according to the implementation.
+
+Then show a simplified successful response.
+
+## 7. Security
+
+Briefly explain:
+
+- why the client cannot provide another user's ID
+- why refresh-token revocation matters
+- why logout may not instantly invalidate a stateless access token
+- why tokens are never logged
+- why logout must not expose sensitive data
+
+## 8. Full authentication lifecycle
+
+End with:
+
+Register
+ ↓
+Login
+ ↓
+Access Token + Refresh Token
+ ↓
+API Requests
+ ↓
+Access Token expires
+ ↓
+Refresh
+ ↓
+New Access Token
+ ↓
+Logout
+ ↓
+Refresh Token/Session revoked
+ ↓
+Future refresh rejected
+```
+
+Use **actual class names, method names, DTO names, repository methods, guards, decorators, and response structures from the codebase**.
+
+Use only essential code snippets.
+
+Do not copy entire source files.
+
+Do not add generic NestJS theory.
+
+---
+
+# 21. Final verification
+
+Before finishing, confirm:
+
+```text
+[ ] Existing login implementation inspected
+[ ] Existing refresh implementation inspected
+[ ] Existing token/session architecture reused
+[ ] Logout endpoint implemented
+[ ] Correct authentication requirement applied
+[ ] Current user/session cannot be spoofed
+[ ] Refresh token/session is revoked when supported
+[ ] Refresh after logout fails when revocation is supported
+[ ] Cookie is cleared when applicable
+[ ] Multiple-session behavior preserved
+[ ] No sensitive token logging
+[ ] npm run lint passes
+[ ] npm run build passes
+[ ] tests pass or limitations are clearly reported
+[ ] work-progress.txt updated
+[ ] auth_logout.txt created/updated
+```
+
+At the end, report:
+
+```text
+Implementation:
+- files created/modified
+- logout/token-revocation strategy used
+- endpoint implemented
+- tests/checks executed
+- documentation updated
+
+Result:
+POST /api/v1/auth/logout → DONE
+```
+
+Do not modify unrelated features.

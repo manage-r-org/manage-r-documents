@@ -1,0 +1,1 @@
+Now give me the prompt to write the `GET /api/v1/auth/me` endpoint accordingly, update the status in /Users/tasinsc/Learning/manage-r/manage-r-documents/work-progress.txt file, write the feature implementation with code snippets similarly in the /Users/tasinsc/Learning/manage-r/manage-r-documents/guides/backend/auth_me.txt file 

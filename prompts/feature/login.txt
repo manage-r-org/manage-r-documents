@@ -1,0 +1,614 @@
+# Implement `POST /api/v1/auth/login`
+
+You are working inside the existing **Manage-R backend** codebase.
+
+Implement the second authentication feature:
+
+```http
+POST /api/v1/auth/login
+```
+
+The registration endpoint has already been implemented. **Use it as the primary reference for architecture, naming, DTOs, exceptions, responses, logging, repository patterns, and security conventions.**
+
+Do not redesign the existing foundation.
+
+---
+
+## 1. Inspect before changing anything
+
+First inspect:
+
+```text
+src/modules/auth/**
+src/modules/users/**
+src/common/**
+src/config/**
+src/database/**
+prisma/schema.prisma
+```
+
+Also inspect the completed registration implementation:
+
+```text
+POST /api/v1/auth/register
+```
+
+Read:
+
+```text
+/Users/tasinsc/Learning/manage-r/manage-r-docs/guides/backend/write-business-code.md
+/Users/tasinsc/Learning/manage-r/manage-r-documents/work-progress.txt
+```
+
+If the registration implementation established a specific pattern, **follow that pattern** instead of creating a parallel one.
+
+Also inspect existing JWT guards/strategies and authentication-related utilities before implementing login.
+
+---
+
+# 2. Endpoint
+
+Implement:
+
+```http
+POST /api/v1/auth/login
+```
+
+Expected flow:
+
+```text
+HTTP Request
+     ↓
+Login DTO
+     ↓
+Auth Controller
+     ↓
+Auth Service
+     ↓
+Find user
+     ↓
+Verify password
+     ↓
+Generate access token
+     ↓
+Generate refresh token
+     ↓
+Return sanitized authentication response
+```
+
+---
+
+# 3. Request
+
+Use the project's existing DTO and validation conventions.
+
+Preferred request:
+
+```json
+{
+  "identifier": "tasin@example.com",
+  "password": "StrongPasswordHere"
+}
+```
+
+The `identifier` should follow whatever login strategy the existing authentication design supports.
+
+If the current design supports email only, use email.
+
+If the existing design intentionally supports username/email, preserve that behavior.
+
+Do **not** invent additional login methods.
+
+Never accept:
+
+```text
+userId
+role
+passwordHash
+```
+
+from the client.
+
+---
+
+# 4. Authentication lookup
+
+The service should:
+
+1. Locate the user using the supported identifier.
+2. Ensure the account exists.
+3. Verify the supplied password against the stored password hash.
+4. Reject invalid credentials using the project's existing authentication/exception conventions.
+
+Do not reveal whether the username/email exists.
+
+For example, avoid responses such as:
+
+```text
+User does not exist
+```
+
+when the password is incorrect.
+
+Prefer one generic authentication failure such as:
+
+```text
+Invalid credentials
+```
+
+This prevents unnecessary account enumeration.
+
+---
+
+# 5. Password verification
+
+Reuse the project's existing password/hash utility.
+
+Conceptually:
+
+```text
+plain password from request
+          ↓
+compare with stored password_hash
+          ↓
+match?
+ ┌────────┴────────┐
+YES                NO
+ ↓                  ↓
+continue       reject login
+```
+
+Never:
+
+* decrypt the password
+* compare plain-text passwords
+* log the password
+* return the password hash
+
+---
+
+# 6. JWT access token
+
+Use the existing JWT configuration.
+
+Inspect:
+
+```text
+JWT_ACCESS_SECRET
+JWT_ACCESS_EXPIRATION
+```
+
+and the existing JWT module/configuration before implementation.
+
+Generate an access token containing only the claims required by the current authentication architecture.
+
+For example:
+
+```json
+{
+  "sub": 123,
+  "username": "tasin",
+  "role": "user"
+}
+```
+
+Do not blindly copy this exact payload if the existing project has a different authenticated-user interface or JWT strategy.
+
+**Follow the existing project's claims contract.**
+
+Do not place sensitive information in JWT claims.
+
+---
+
+# 7. Refresh token
+
+The project already defines:
+
+```text
+JWT_REFRESH_SECRET
+JWT_REFRESH_EXPIRATION
+```
+
+Inspect the existing authentication architecture and determine how refresh tokens are intended to work.
+
+If the current foundation already has refresh-token support, implement login consistently with it.
+
+If refresh-token persistence/rotation has not yet been implemented, **do not invent a database design just for this endpoint**.
+
+In that case:
+
+* implement the currently established token strategy
+* clearly document any intentionally deferred refresh-token persistence/rotation work
+* do not pretend that an incomplete refresh-token security model is production-ready
+
+The implementation must remain compatible with the planned refresh-token flow.
+
+---
+
+# 8. Response
+
+Follow the existing standard API response structure.
+
+The successful response should contain the authentication result, for example:
+
+```json
+{
+  "success": true,
+  "data": {
+    "accessToken": "...",
+    "refreshToken": "...",
+    "tokenType": "Bearer",
+    "expiresIn": 900
+  }
+}
+```
+
+Use the actual project's response conventions and configured expiration.
+
+Do not return:
+
+```text
+password
+passwordHash
+```
+
+or unnecessary internal database fields.
+
+---
+
+# 9. Repository responsibilities
+
+Follow the existing repository abstraction.
+
+The repository should handle database access such as:
+
+```text
+find user by login identifier
+```
+
+The service should handle business logic:
+
+```text
+find user
+ ↓
+verify password
+ ↓
+build token payload
+ ↓
+generate tokens
+ ↓
+return authentication result
+```
+
+The controller should remain thin:
+
+```text
+HTTP request
+ ↓
+DTO validation
+ ↓
+service call
+ ↓
+HTTP response
+```
+
+Do not put Prisma queries directly in the controller or service if the existing architecture separates persistence through repositories.
+
+---
+
+# 10. Guards and strategies
+
+Inspect the existing:
+
+```text
+JwtAuthGuard
+JWT strategy
+Local strategy
+RolesGuard
+CurrentUser decorator
+```
+
+Determine whether the current architecture expects a `LocalStrategy` for login.
+
+If a local authentication strategy already exists or was planned in the foundation, use it consistently.
+
+Do not create duplicate authentication mechanisms.
+
+The final flow should remain easy to understand:
+
+```text
+Login
+ ↓
+credentials validation
+ ↓
+JWT generation
+ ↓
+client receives tokens
+ ↓
+future protected request
+ ↓
+JwtAuthGuard
+ ↓
+JWT strategy
+ ↓
+CurrentUser
+ ↓
+controller
+```
+
+---
+
+# 11. Security requirements
+
+Ensure:
+
+* passwords are never logged
+* password hashes are never returned
+* invalid credentials use a generic error
+* JWT secrets come from environment/configuration
+* JWT expiration comes from configuration
+* sensitive information is not placed inside JWT claims
+* client cannot choose its own role
+* database errors are not exposed directly
+* existing rate limiting/throttling remains active
+* existing security middleware remains untouched
+
+Do not weaken any existing security configuration to make login work.
+
+---
+
+# 12. Error handling
+
+Use the existing exception hierarchy and global exception filter.
+
+At minimum handle:
+
+```text
+400 → invalid request
+401 → invalid credentials
+500 → unexpected application/database failure
+```
+
+Do not leak raw Prisma errors.
+
+Do not distinguish between:
+
+```text
+user not found
+wrong password
+```
+
+to the client.
+
+---
+
+# 13. Testing
+
+Run the project's existing checks.
+
+At minimum verify:
+
+```text
+✓ valid credentials successfully log in
+✓ incorrect password is rejected
+✓ nonexistent identifier is rejected
+✓ invalid DTO is rejected
+✓ access token is generated
+✓ refresh token behavior follows the existing design
+✓ password is never returned
+✓ password hash is never returned
+✓ sensitive credentials are not logged
+✓ JWT contains only intended claims
+```
+
+Run:
+
+```bash
+npm run lint
+npm run build
+npm test
+```
+
+if those commands are available and applicable.
+
+Do not disable ESLint rules or tests to make the implementation pass.
+
+---
+
+# 14. Update work progress
+
+After the endpoint is successfully implemented and verified, update:
+
+```text
+/Users/tasinsc/Learning/manage-r/manage-r-documents/work-progress.txt
+```
+
+Find:
+
+```text
+POST /api/v1/auth/login
+```
+
+and mark it:
+
+```text
+✅ DONE
+```
+
+Preserve the existing formatting and do not modify unrelated statuses.
+
+Only mark it DONE if the implementation and verification actually succeed.
+
+---
+
+# 15. Create the feature guide
+
+Create/update:
+
+```text
+/Users/tasinsc/Learning/manage-r/manage-r-documents/guides/backend/auth_login.txt
+```
+
+Write a **short, beginner-friendly implementation guide**.
+
+The purpose is to help me understand the actual code I just implemented, not to create a theoretical authentication tutorial.
+
+Use this structure:
+
+````text
+# POST /api/v1/auth/login
+
+## What this endpoint does
+
+2–4 simple sentences.
+
+## Request → Backend → Response
+
+Show:
+
+HTTP request
+   ↓
+DTO
+   ↓
+Controller
+   ↓
+Service
+   ↓
+Repository
+   ↓
+PostgreSQL
+   ↓
+Password verification
+   ↓
+JWT generation
+   ↓
+Response
+
+## 1. DTO
+
+Show only the essential DTO code.
+
+Explain it in simple language.
+
+## 2. Controller
+
+Show the essential controller method.
+
+Explain what it does.
+
+## 3. Service
+
+Show the important business logic:
+
+find user
+→ verify password
+→ create token payload
+→ generate tokens
+→ return result
+
+## 4. Repository
+
+Show the essential user lookup.
+
+Explain that Prisma talks to PostgreSQL here.
+
+## 5. JWT
+
+Show the essential token-generation code.
+
+Briefly explain:
+
+- `sub`
+- role/other claims actually used by the project
+- expiration
+- access token vs refresh token
+
+## 6. Request / Response
+
+Show one realistic request:
+
+POST /api/v1/auth/login
+
+```json
+{
+  "identifier": "tasin@example.com",
+  "password": "********"
+}
+````
+
+Then show a simplified successful response.
+
+## 7. Security
+
+Explain briefly:
+
+* why passwords are hashed
+* why invalid credentials use a generic error
+* why secrets come from environment variables
+* why password hashes aren't returned
+* why JWT claims must stay minimal
+
+## 8. Full flow in one picture
+
+End with a compact diagram:
+
+Client
+↓
+Controller
+↓
+DTO
+↓
+Service
+├── Repository → PostgreSQL
+├── Password verification
+└── JWT service
+↓
+Response
+↓
+Client stores/uses token
+
+````
+
+Use **only essential code snippets**.
+
+Do not copy entire source files.
+
+Do not bloat the document with generic NestJS explanations.
+
+Use the **actual names, classes, methods, DTOs, repositories, services, and response structures from this codebase**.
+
+---
+
+# 16. Final verification
+
+Before finishing, confirm:
+
+```text
+[ ] Endpoint implemented
+[ ] Existing architecture preserved
+[ ] Registration conventions reused
+[ ] Authentication flow works
+[ ] JWT configuration reused
+[ ] Password security preserved
+[ ] npm run lint passes
+[ ] npm run build passes
+[ ] tests pass or existing test limitations are reported
+[ ] work-progress.txt updated
+[ ] auth_login.txt created/updated
+````
+
+At the end, report:
+
+```text
+Implementation:
+- files created/modified
+- endpoint implemented
+- authentication flow used
+- checks/tests executed
+- documentation updated
+
+Result:
+POST /api/v1/auth/login → DONE
+```
+
+Do not modify unrelated features.

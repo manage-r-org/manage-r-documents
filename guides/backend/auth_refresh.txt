@@ -1,0 +1,205 @@
+# POST /api/v1/auth/refresh
+
+## What this endpoint does
+
+The client sends its refresh token and receives a fresh access token. The backend
+verifies the refresh token's signature and expiry, reloads the account from the
+database, and signs a new access token exactly like login does. It does not
+require a valid access token — that is the whole point.
+
+## Why do we need refresh tokens?
+
+Access tokens are short-lived (15 minutes). If the user had to log in again every
+15 minutes the app would be unusable.
+
+```
+Access token expires
+→ user should not have to log in again
+→ refresh token is used
+→ backend issues a new access token
+```
+
+## Request → Backend → Response
+
+```
+Client
+ ↓
+Controller (AuthController.refresh, @Public())
+ ↓
+DTO (RefreshTokenDto)
+ ↓
+Auth Service (AuthService.refresh)
+ ↓
+JWT verification (jwtService.verifyAsync + refresh secret)
+ ↓
+User validation (AuthRepository.findByIdWithRole)
+ ↓
+Token generation (signAccessToken)
+ ↓
+Response (RefreshResponse)
+```
+
+## 1. DTO
+
+`src/modules/auth/dto/refresh-token.dto.ts`
+
+```ts
+export class RefreshTokenDto {
+  @IsString()
+  @IsNotEmpty()
+  refreshToken!: string;
+}
+```
+
+It validates one field: the refresh token the client received at login. Missing or
+empty → 400. Anything else that is not a valid refresh token fails later with 401.
+The global `ValidationPipe` also strips any extra field (`userId`, `role`,
+`accessToken`, `password`), so the client can never influence token generation.
+
+## 2. Controller
+
+`src/modules/auth/auth.controller.ts`
+
+```ts
+@Public()
+@Post('refresh')
+refresh(@Body() dto: RefreshTokenDto): Promise<RefreshResponse> {
+  return this.authService.refresh(dto);
+}
+```
+
+The endpoint is marked `@Public()` on purpose: it is **not** protected by the
+access-token guard, because its job is to replace an access token that has already
+expired. Guarding it with `JwtAuthGuard` would make it useless.
+
+## 3. Service
+
+`src/modules/auth/auth.service.ts` — `AuthService.refresh(dto)`
+
+```ts
+async refresh(dto: RefreshTokenDto): Promise<RefreshResponse> {
+  const payload = await this.verifyRefreshToken(dto.refreshToken);
+  const user = await this.authRepository.findByIdWithRole(payload.sub);
+
+  if (!user) {
+    throw new UnauthorizedException(ERROR_MESSAGES.INVALID_REFRESH_TOKEN);
+  }
+  if (!user.is_active) {
+    throw new ForbiddenException(ERROR_MESSAGES.ACCOUNT_DISABLED);
+  }
+
+  const accessToken = await this.signAccessToken(this.buildAuthTokenPayload(user));
+
+  return { accessToken, tokenType: 'Bearer', expiresIn: this.getAccessTokenTtlSeconds(accessToken) };
+}
+```
+
+Flow inside the service:
+
+- `verifyRefreshToken` → `jwtService.verifyAsync(token, { secret: jwtRefreshSecret })`.
+  Expired, malformed, wrong-secret, and access tokens all throw here and become one
+  generic `401 Invalid or expired refresh token.` The reason is logged internally
+  (`refresh_token_rejected` + `TokenExpiredError`/`JsonWebTokenError`), never sent
+  to the client.
+- The user is loaded from the database by the `sub` claim. A deleted user → 401.
+  A disabled account → 403 (same message as login).
+- `buildAuthTokenPayload` re-derives claims from the **current** database row, so a
+  role change is picked up and the client cannot choose the user or role.
+- `signAccessToken` signs with the module default (access secret/expiration) — the
+  exact same call login uses. No second JWT utility exists.
+- No new refresh token is issued: Manage-R refresh tokens are **stateless and not
+  rotated** (nothing is persisted), so the client reuses the same refresh token
+  until it expires. See `RefreshResponse` in `mappers/auth.mapper.ts`.
+
+## 4. Repository
+
+`src/modules/auth/auth.repository.ts`
+
+```ts
+findByIdWithRole(id: string): Promise<UserWithRole | null> {
+  return this.prisma.sec_user.findUnique({
+    where: { user_id: BigInt(id) },
+    include: { sec_role: true },
+  });
+}
+```
+
+The JWT `sub` is the BIGINT `user_id` as a string, so the repository converts it
+with `BigInt(id)` and queries PostgreSQL through Prisma. The role relation is
+included so the access-token claims come from current database state.
+
+## 5. JWT
+
+| Token | Secret | Expiration | Env vars |
+| ----- | ------ | ---------- | -------- |
+| Access | `JWT_ACCESS_SECRET` | `JWT_ACCESS_EXPIRATION` (15m) | default `signOptions` of `JwtModule` |
+| Refresh | `JWT_REFRESH_SECRET` | `JWT_REFRESH_EXPIRATION` (7d) | passed explicitly when signing/verifying |
+
+Claims actually used by Manage-R (same for both tokens, kept minimal):
+
+```json
+{ "sub": "1", "email": "tasin@example.com", "roles": ["USER"] }
+```
+
+`sub` → the BIGINT user id as a string. The refresh endpoint verifies with the
+refresh secret only, so an access token (access secret) can never be used as a
+refresh token.
+
+## 6. Request / Response
+
+```http
+POST /api/v1/auth/refresh
+Content-Type: application/json
+
+{ "refreshToken": "eyJhbGciOiJIUzI1NiIs..." }
+```
+
+Success:
+
+```json
+{
+  "success": true,
+  "message": "Operation completed successfully.",
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+    "tokenType": "Bearer",
+    "expiresIn": 900
+  }
+}
+```
+
+No `refreshToken` is returned because none is rotated. Error cases: 400 for
+missing/empty body, 401 for any invalid/expired/wrong-secret/malformed token,
+403 for a disabled account. All 401s share the same body — no details leaked.
+
+## 7. Security
+
+- Refresh tokens are secrets: anyone holding one can mint access tokens, so they
+  are never logged and never returned after refresh.
+- Expired tokens are rejected (`ignoreExpiration` default in `verifyAsync`).
+- Access and refresh secrets are separate, so a stolen access token cannot be used
+  on `/auth/refresh` and a stolen refresh token cannot call protected APIs.
+- The client cannot choose the user or role: identity comes from the verified
+  token's `sub`, and roles are re-loaded from the database.
+- Limitation (documented, not hidden): refresh tokens are stateless — there is no
+  session table, so a leaked refresh token stays valid until it expires and
+  "logout" cannot revoke it yet. Real rotation/revocation needs a session table;
+  it was intentionally not invented here.
+
+## 8. Full flow
+
+```
+Login
+ ↓
+Access Token + Refresh Token
+ ↓
+Access Token expires (15 min)
+ ↓
+POST /auth/refresh  →  { refreshToken }
+ ↓
+Validate Refresh Token (signature + expiry)
+ ↓
+New Access Token (15 min)
+ ↓
+Continue API requests with the new access token
+```

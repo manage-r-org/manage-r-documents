@@ -1,0 +1,632 @@
+Implement the next Manage-R authentication feature:
+
+```text
+GET /api/v1/auth/me
+```
+
+You are working inside the existing Manage-R backend. **Do not redesign the architecture.** Inspect the current code first and follow the patterns already implemented by:
+
+```text
+POST /api/v1/auth/register
+POST /api/v1/auth/login
+POST /api/v1/auth/refresh
+POST /api/v1/auth/logout
+```
+
+The existing codebase is the source of truth.
+
+---
+
+# 1. Inspect first
+
+Before modifying anything, inspect:
+
+```text
+src/modules/auth/**
+src/modules/users/**
+src/modules/profiles/**
+src/common/**
+src/database/**
+prisma/schema.prisma
+```
+
+Especially inspect:
+
+* AuthController
+* AuthService
+* AuthRepository
+* UsersRepository
+* Profile repository/service if applicable
+* JwtAuthGuard
+* JWT strategy
+* `CurrentUser` decorator
+* `AuthenticatedUser` interface
+* existing response format/interceptor
+* existing DTO conventions
+* existing exception handling
+* Prisma models and relations
+
+Also inspect:
+
+```text
+/Users/tasinsc/Learning/manage-r/manage-r-documents/work-progress.txt
+/Users/tasinsc/Learning/manage-r/manage-r-documents/guides/backend/write-business-code.md
+```
+
+And inspect the implementation of the existing auth endpoints so this feature matches them.
+
+---
+
+# 2. Endpoint
+
+Implement:
+
+```http
+GET /api/v1/auth/me
+```
+
+This endpoint returns information about the **currently authenticated user**.
+
+The client should send:
+
+```http
+Authorization: Bearer <access-token>
+```
+
+There must be no:
+
+```text
+userId
+email
+username
+```
+
+parameter that allows the client to choose which user to retrieve.
+
+The authenticated JWT determines the user.
+
+---
+
+# 3. Expected flow
+
+Implement the flow approximately as:
+
+```text
+Client
+  │
+  │ GET /api/v1/auth/me
+  │ Authorization: Bearer <access-token>
+  ▼
+JwtAuthGuard
+  │
+  ▼
+JWT Strategy
+  │
+  ▼
+AuthenticatedUser
+  │
+  ▼
+AuthController
+  │
+  ▼
+AuthService
+  │
+  ▼
+UsersRepository
+  │
+  ▼
+PostgreSQL / Prisma
+  │
+  ▼
+Safe user information
+  │
+  ▼
+API response
+```
+
+Use the project's actual classes and architecture where they differ.
+
+---
+
+# 4. Authentication
+
+Protect the endpoint using the existing authentication guard.
+
+Prefer the existing project mechanism, for example:
+
+```ts
+@UseGuards(JwtAuthGuard)
+```
+
+or whatever equivalent already exists.
+
+Do not create another JWT guard or authentication strategy.
+
+Use the existing:
+
+```text
+CurrentUser
+AuthenticatedUser
+```
+
+mechanism if already implemented.
+
+---
+
+# 5. Current user identity
+
+The endpoint must obtain the authenticated user's identity from the validated JWT/authentication context.
+
+Conceptually:
+
+```ts
+@Get('me')
+@UseGuards(JwtAuthGuard)
+async getMe(@CurrentUser() user: AuthenticatedUser) {
+  return this.authService.getMe(user.userId);
+}
+```
+
+Use the actual property name used by the existing `AuthenticatedUser` interface.
+
+Do not trust a user ID supplied through:
+
+```text
+query parameters
+path parameters
+request body
+custom headers
+```
+
+for determining whose account is returned.
+
+---
+
+# 6. Service
+
+Keep the controller thin.
+
+The service should:
+
+1. Receive the authenticated user's ID.
+2. Fetch the user using the existing repository abstraction.
+3. Include the appropriate profile information if the existing data model requires it.
+4. Map the database entity into a safe API response.
+5. Never expose sensitive fields.
+
+Conceptually:
+
+```text
+authenticated user ID
+        ↓
+UsersRepository
+        ↓
+sec_user
+        +
+profile if required
+        ↓
+safe response DTO
+```
+
+Use the existing repository/service conventions instead of introducing a new architectural pattern.
+
+---
+
+# 7. Repository
+
+Use the existing repository abstraction.
+
+Do not put Prisma queries directly inside the controller.
+
+If an existing repository method can be reused, reuse it.
+
+If a new repository method is needed, create a focused method such as:
+
+```ts
+findById(userId)
+```
+
+or follow the actual naming convention already present in the project.
+
+The query should retrieve only the information required by `/auth/me` where practical.
+
+Do not expose:
+
+```text
+password_hash
+refresh tokens
+token hashes
+internal security fields
+```
+
+or other sensitive persistence data.
+
+---
+
+# 8. Response DTO
+
+Inspect the existing response DTO conventions.
+
+If the project uses explicit response DTOs, create/use one for the `/me` response.
+
+The response should contain useful account information such as:
+
+```json
+{
+  "id": 1,
+  "username": "example",
+  "email": "example@email.com",
+  "phoneNumber": "...",
+  "role": "user"
+}
+```
+
+Include profile information only if the current architecture/design expects `/auth/me` to return it.
+
+Do not blindly return the entire `sec_user` or `profile` database object.
+
+The exact response must follow the existing API naming and response-wrapper conventions.
+
+---
+
+# 9. Sensitive data
+
+This endpoint must NEVER return:
+
+```text
+password_hash
+password
+refresh_token
+refresh_token_hash
+access_token
+JWT secrets
+security/internal audit information
+```
+
+Even if Prisma returns those fields internally, map the entity into a safe response object before returning it.
+
+Prefer an explicit mapping such as:
+
+```ts
+return {
+  id: user.userId,
+  username: user.username,
+  email: user.email,
+  role: user.role,
+};
+```
+
+Use the project's actual field names.
+
+---
+
+# 10. User not found
+
+There is an important edge case:
+
+```text
+JWT is valid
+       ↓
+user no longer exists
+       ↓
+GET /auth/me
+```
+
+Handle this through the existing exception/error-handling mechanism.
+
+Do not return a successful response containing `null` unless that is already the project's convention.
+
+Do not expose raw Prisma errors.
+
+---
+
+# 11. Authorization vs authentication
+
+`/auth/me` is an **authentication** endpoint, not an admin endpoint.
+
+Both:
+
+```text
+admin
+user
+```
+
+should be able to call it when authenticated.
+
+Do not add:
+
+```text
+RolesGuard
+@Roles('admin')
+```
+
+unless the existing requirements specifically demand it.
+
+The endpoint answers:
+
+> "Who am I?"
+
+not:
+
+> "Which users am I allowed to manage?"
+
+---
+
+# 12. Swagger
+
+Update Swagger decorators if the project uses them.
+
+Document:
+
+```text
+GET /api/v1/auth/me
+```
+
+with:
+
+* Bearer authentication
+* summary
+* successful response
+* unauthorized response
+* response DTO if applicable
+
+Follow the existing Swagger style.
+
+---
+
+# 13. Tests
+
+Add focused tests according to the existing testing structure.
+
+At minimum verify:
+
+```text
+✓ authenticated user can call /auth/me
+✓ returned user belongs to the authenticated JWT identity
+✓ another user's ID cannot be supplied to retrieve their data
+✓ unauthenticated request is rejected
+✓ nonexistent authenticated user is handled correctly
+✓ password_hash is never returned
+✓ refresh/access tokens are never returned
+✓ admin can call the endpoint
+✓ normal user can call the endpoint
+```
+
+If the project already has authentication test helpers/mocks, reuse them.
+
+Do not introduce a completely new testing pattern.
+
+---
+
+# 14. Verify the endpoint manually
+
+After implementation, run the appropriate checks:
+
+```bash
+npm run lint
+npm run build
+npm test
+```
+
+Then, if practical, start the backend and test:
+
+```http
+GET http://localhost:3000/api/v1/auth/me
+Authorization: Bearer <valid-access-token>
+```
+
+Verify:
+
+```text
+valid token
+    → 200
+
+missing token
+    → 401
+
+invalid/expired token
+    → 401
+```
+
+Also verify that the response does not contain sensitive database fields.
+
+---
+
+# 15. Update work-progress.txt
+
+Update:
+
+```text
+/Users/tasinsc/Learning/manage-r/manage-r-documents/work-progress.txt
+```
+
+Find the entry for:
+
+```text
+GET /api/v1/auth/me
+```
+
+and mark it:
+
+```text
+✅ DONE
+```
+
+Preserve the existing formatting and do not modify unrelated statuses.
+
+Only mark it DONE after the implementation and verification succeed.
+
+---
+
+# 16. Create the feature guide
+
+Create/update:
+
+```text
+/Users/tasinsc/Learning/manage-r/manage-r-documents/guides/backend/auth_me.txt
+```
+
+Keep this guide **short, practical, beginner-friendly, and based on the actual implementation**.
+
+Do not write a generic NestJS tutorial.
+
+Use this structure:
+
+```text
+# GET /api/v1/auth/me
+
+## What does it do?
+
+Explain in 2–3 simple sentences.
+
+The endpoint tells the backend:
+
+"Here is my access token. Tell me which user I am."
+
+## Request
+
+Show:
+
+GET /api/v1/auth/me
+
+Authorization: Bearer <access-token>
+
+Explain briefly that the user ID does not come from the request.
+
+## Flow
+
+Show:
+
+Client
+ ↓
+Access Token
+ ↓
+JwtAuthGuard
+ ↓
+JWT Strategy
+ ↓
+CurrentUser
+ ↓
+AuthController
+ ↓
+AuthService
+ ↓
+UsersRepository
+ ↓
+PostgreSQL
+ ↓
+Safe User Response
+
+Use the actual classes from the project.
+
+## 1. Guard / authentication
+
+Show the essential guard/controller code.
+
+Explain how the JWT identifies the user.
+
+## 2. Controller
+
+Show the essential controller method.
+
+Explain why there is no `userId` parameter.
+
+## 3. Service
+
+Show the essential service method.
+
+Explain:
+
+JWT user ID
+→ repository
+→ user data
+→ safe response
+
+## 4. Repository
+
+Show only the important database query/repository method.
+
+Explain briefly how it reaches PostgreSQL.
+
+## 5. Response
+
+Show the actual/simplified response returned by the implementation.
+
+## 6. Security
+
+Briefly explain:
+
+- why the endpoint uses the JWT identity
+- why users cannot request another user's account by changing an ID
+- why password_hash is excluded
+- why tokens are excluded
+- why authentication and authorization are different here
+
+## 7. Full request lifecycle
+
+End with a compact diagram:
+
+GET /auth/me
+ ↓
+Bearer Access Token
+ ↓
+JWT validation
+ ↓
+AuthenticatedUser
+ ↓
+userId
+ ↓
+Database query
+ ↓
+Safe User DTO
+ ↓
+200 Response
+```
+
+Use **actual code from the implemented feature**, not invented examples.
+
+Include only essential snippets.
+
+Do not paste entire files.
+
+Do not add unnecessary NestJS theory.
+
+---
+
+# 17. Final review
+
+Before reporting completion, verify:
+
+```text
+[ ] Existing auth architecture inspected
+[ ] Existing JwtAuthGuard reused
+[ ] Existing CurrentUser mechanism reused
+[ ] No userId accepted from client
+[ ] AuthService contains business logic
+[ ] Repository handles database access
+[ ] Sensitive fields excluded
+[ ] Correct response format used
+[ ] Swagger updated
+[ ] Tests added/updated
+[ ] npm run lint passes
+[ ] npm run build passes
+[ ] tests pass
+[ ] work-progress.txt updated
+[ ] auth_me.txt created/updated
+```
+
+At the end, report:
+
+```text
+Implementation:
+- files created/modified
+- authentication flow used
+- response structure
+- tests/checks executed
+- documentation updated
+
+Result:
+GET /api/v1/auth/me → DONE
+```
+
+Do not modify unrelated features.
